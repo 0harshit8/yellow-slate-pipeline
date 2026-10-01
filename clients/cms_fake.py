@@ -33,7 +33,7 @@ class FakeCMS(CMS):
         for s in self.schools:
             if s["city"].lower() != city.lower() or s["area"].lower() != area.lower():
                 continue
-            score = similar(name, s["name"])
+            score = similar(name, s["name"], places=(city, area))
             if score > best_score:
                 best, best_score = s, score
         if best and best_score >= MERGE_THRESHOLD:

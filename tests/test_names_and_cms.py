@@ -68,3 +68,23 @@ def test_blog_slug():
     assert blog_slug("schools in Hauz Khas", "Delhi") == "best-schools-in-hauz-khas-delhi"
     assert blog_slug("Best Schools in Kalkaji", "Delhi") == "best-schools-in-kalkaji-delhi"
     assert blog_slug("best schools in hauz khas delhi", "Delhi") == "best-schools-in-hauz-khas-delhi"
+
+
+def test_shared_filler_words_dont_match(cms):
+    """Regression: DAV was matched to Kalka because 'Public School Kalkaji' is shared."""
+    kalka = ensure_school(cms, "Kalka Public School", "Delhi", "Kalkaji")
+    dav = ensure_school(cms, "DAV Public School", "Delhi", "Kalkaji")
+    assert dav["created"] and dav["id"] != kalka["id"]
+
+
+def test_spelling_variants_still_match(cms):
+    a = ensure_school(cms, "Guru Har Krishan Public School", "Delhi", "Kalkaji")
+    b = ensure_school(cms, "Guru Harkrishan Public School", "Delhi", "Kalkaji")
+    c = ensure_school(cms, "Sri Sathya Sai Vidya Vihar", "Delhi", "Kalkaji")
+    d = ensure_school(cms, "Shri Satya Sai Vidya Vihar School", "Delhi", "Kalkaji")
+    assert a["id"] == b["id"] and c["id"] == d["id"]
+
+
+def test_merge_keeps_different_schools_apart():
+    out = merge({"a": ["DAV Public School", "Kalka Public School"], "b": ["Kalka Public School"]})
+    assert len(out) == 2

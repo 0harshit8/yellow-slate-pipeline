@@ -40,15 +40,25 @@ def normalize(name):
 GENERIC = {"the", "school", "schools", "public", "senior", "secondary", "sr", "sec", "high", "co", "ed"}
 
 
-def core(name):
-    """Normalized name without generic words: 'Deepalaya School' -> 'deepalaya'."""
-    return " ".join(w for w in normalize(name).split() if w not in GENERIC)
+def core(name, places=()):
+    """Normalized name without generic words or place names: 'Deepalaya School Kalkaji' -> 'deepalaya'."""
+    drop = set(GENERIC)
+    for p in places:
+        drop.update(normalize(p).split())
+    words = [w for w in normalize(name).split() if w not in drop]
+    return " ".join(words) or normalize(name)
 
 
-def similar(a, b):
-    if core(a) and core(a) == core(b):
+def similar(a, b, places=()):
+    """Compare only the distinctive part of two names.
+
+    Shared filler like 'Public School Kalkaji' must not count: on full names
+    'DAV Public School Kalkaji' vs 'Kalka Public School Kalkaji' scores ~0.88.
+    """
+    ca, cb = core(a, places), core(b, places)
+    if ca == cb:
         return 1.0
-    return SequenceMatcher(None, normalize(a), normalize(b)).ratio()
+    return SequenceMatcher(None, ca, cb).ratio()
 
 
 def merge(names_per_page):
