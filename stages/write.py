@@ -2,6 +2,8 @@
 
 import json
 import os
+import shutil
+import time
 
 import config
 from clients import claude_cli
@@ -26,9 +28,22 @@ def build_prompt(keyword, city, area, slug, schools):
         keyword=keyword, city=city, area=area, slug=slug, schools=lines, out_dir=out_dir(slug).replace("\\", "/"))
 
 
+def clear_previous(folder):
+    """Move an earlier run's folder to output/_previous/<slug>-<stamp>, so the writer starts
+    empty instead of finding the old blog.md and patching it. Returns the new path, or None."""
+    if not os.path.isdir(folder) or not os.listdir(folder):
+        return None
+    dest = os.path.join(os.path.dirname(folder), "_previous",
+                        f"{os.path.basename(folder)}-{time.strftime('%Y%m%d-%H%M%S')}")
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.move(folder, dest)
+    return dest
+
+
 def write_blog(keyword, city, area, slug, schools):
     """Returns path to blog.md. Raises ClaudeError if the run fails or no blog appears."""
     folder = os.path.join(config.ROOT, out_dir(slug))
+    clear_previous(folder)
     os.makedirs(folder, exist_ok=True)
     envelope = claude_cli.run(build_prompt(keyword, city, area, slug, schools),
                               allowed_tools=TOOLS, max_turns=120, timeout=2400,
