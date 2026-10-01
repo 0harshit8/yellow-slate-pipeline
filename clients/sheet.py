@@ -245,6 +245,14 @@ def write_pick(ws, keyword, shortlist):
     render_queue(ws, blocks)
 
 
+def set_ticks(ws, block, approved_rows):
+    """Tick exactly the schools in approved_rows (sheet row numbers) for one blog's block."""
+    tick_col = col_letter(QUEUE_HEADERS.index("✓") + 1)
+    data = [{"range": f"{tick_col}{s['row']}", "values": [[s["row"] in approved_rows]]} for s in block["schools"]]
+    if data:
+        ws.batch_update(data, value_input_option="USER_ENTERED")
+
+
 def archive_block(sh, keyword):
     """Move a processed blog's block from the queue to the archive tab."""
     ws = sh.worksheet(SCHOOLS)

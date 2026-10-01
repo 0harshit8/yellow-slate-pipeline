@@ -9,7 +9,7 @@ Flow per keyword (Blogs tab Status column):
 Commands
 --------
   python pipeline.py setup                       build/refresh the sheet tabs (safe to re-run)
-  python pipeline.py add "<keyword>" --city C [--area A]   add one keyword row
+  python pipeline.py add "<kw>" ["<kw>" ...] --city C [--area A]   add keyword rows (duplicates skipped)
   python pipeline.py pick   [--limit N] [--row KEYWORD]
   python pipeline.py cms    [--limit N] [--row KEYWORD]
   python pipeline.py write  [--limit N] [--row KEYWORD]
@@ -17,7 +17,11 @@ Commands
   python pipeline.py names                       Semrush paste list (bare school names, 100 per batch)
   python pipeline.py volumes                     fill Vol from Semrush exports in data/semrush/
   python pipeline.py docx   [--row KEYWORD]       rebuild blog.docx (to share) from blog.md
+  python pipeline.py show   [--row KEYWORD]       numbered school list for picked blogs
+  python pipeline.py approve --row KEYWORD --schools "1-12 drop 4,7"   tick those, set approved
   python pipeline.py status
+
+--row can be given more than once to cover several keywords.
 
 Each stage only takes rows in the status before it. A failed row keeps its status and
 gets an Error note, so rerunning the stage retries just the failures.
@@ -40,6 +44,7 @@ from stages import pick as pick_stage
 from stages import qc as qc_stage
 from stages import write as write_stage
 from stages.names import blog_slug, semrush_term
+from stages.selection import new_keywords, parse_selection
 from stages.semrush import semrush_volumes
 
 SEMRUSH_DIR = os.path.join(config.DATA_DIR, "semrush")
@@ -49,11 +54,16 @@ def area_from_keyword(keyword):
     return m.group(1).strip().title() if m else ""
 
 
+def wanted(args):
+    return {r.strip().lower() for r in args.row}
+
+
 def rows_in(blogs, status, args):
     rows = [b for b in blogs if b["Status"].strip() == status]
     if args.row:
-        rows = [b for b in rows if b["Keyword"].strip().lower() == args.row.lower()]
-    return rows[: args.limit] if args.limit else rows
+        rows = [b for b in rows if b["Keyword"].strip().lower() in wanted(args)]
+    limit = getattr(args, "limit", 0)
+    return rows[:limit] if limit else rows
 
 
 def approved_schools(picks, keyword):
@@ -80,11 +90,18 @@ def cmd_setup(sh, args):
 
 def cmd_add(sh, args):
     ws = sh.worksheet(sheet.BLOGS)
-    if any(b["Keyword"].strip().lower() == args.keyword.lower() for b in sheet.records(ws)):
-        sys.exit(f"Already in the sheet: {args.keyword}")
-    area = args.area or area_from_keyword(args.keyword)
-    sheet.append(ws, [[args.keyword, args.city, area, blog_slug(args.keyword, args.city), "new", "", "", "", ""]])
-    print(f"Added: {args.keyword} | {args.city} | {area}")
+    fresh, skipped = new_keywords([b["Keyword"] for b in sheet.records(ws)], args.keyword)
+    if args.area and len(fresh) > 1:
+        sys.exit("--area only works with one keyword; leave it out and the area comes from each keyword")
+    rows = []
+    for kw in fresh:
+        area = args.area or area_from_keyword(kw)
+        rows.append([kw, args.city, area, blog_slug(kw, args.city), "new", "", "", "", ""])
+        print(f"Added: {kw} | {args.city} | {area}")
+    if rows:
+        sheet.append(ws, rows)
+    for kw in skipped:
+        print(f"Skipped, already in the sheet: {kw}")
 
 
 def cmd_pick(sh, args):
@@ -251,7 +268,7 @@ def cmd_docx(sh, args):
     """Rebuild blog.docx from blog.md, e.g. after hand edits. Any blog that has been written."""
     from stages import docx_export
     for b in sheet.records(sh.worksheet(sheet.BLOGS)):
-        if args.row and b["Keyword"].strip().lower() != args.row.lower():
+        if args.row and b["Keyword"].strip().lower() not in wanted(args):
             continue
         folder = blog_folder(b)
         if os.path.exists(os.path.join(folder, "blog.md")):
@@ -259,6 +276,45 @@ def cmd_docx(sh, args):
                 print(f"docx: {docx_export.export(folder)}")
             except PermissionError as err:
                 print(f"docx: {err}")
+
+
+def cmd_show(sh, args):
+    """Numbered school list per picked blog, for choosing in chat."""
+    picks = sheet.read_picks(sh.worksheet(sheet.SCHOOLS))
+    for b in rows_in(sheet.records(sh.worksheet(sheet.BLOGS)), "picked", args):
+        block = picks.get(b["Keyword"].strip().lower())
+        if not block:
+            print(f"{b['Keyword']}: no school list in the Schools tab, rerun pick")
+            continue
+        print(f"\n{b['Keyword']} ({len(block['schools'])} found)")
+        for i, s in enumerate(block["schools"], 1):
+            vol = f"  vol {s['volume']}" if s["volume"] else ""
+            tick = "  [ticked]" if s["approved"] else ""
+            print(f"  {i:>2}. {s['name']}  count {s['count']}{vol}{tick}")
+
+
+def cmd_approve(sh, args):
+    """Tick the chosen schools for one picked blog and set it to approved."""
+    if len(args.row) != 1:
+        sys.exit("approve takes exactly one --row")
+    blogs_ws, schools_ws = sh.worksheet(sheet.BLOGS), sh.worksheet(sheet.SCHOOLS)
+    rows = rows_in(sheet.records(blogs_ws), "picked", args)
+    if not rows:
+        sys.exit(f"No picked blog called '{args.row[0]}'")
+    b = rows[0]
+    block = sheet.read_picks(schools_ws).get(b["Keyword"].strip().lower())
+    if not block:
+        sys.exit(f"{b['Keyword']}: no school list in the Schools tab")
+    try:
+        nums = parse_selection(args.schools, len(block["schools"]))
+    except ValueError as err:
+        sys.exit(f"Can't use '{args.schools}': {err}")
+    if not 8 <= len(nums) <= 12:
+        sys.exit(f"{len(nums)} schools chosen, need 8-12")
+    chosen = [block["schools"][n - 1] for n in nums]
+    sheet.set_ticks(schools_ws, block, {s["row"] for s in chosen})
+    sheet.set_blog(blogs_ws, b["_row"], status="approved")
+    print(f"Approved {b['Keyword']} with {len(chosen)} schools: " + ", ".join(s["name"] for s in chosen))
 
 
 def cmd_status(sh, args):
@@ -277,15 +333,20 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("setup")
     a = sub.add_parser("add")
-    a.add_argument("keyword")
+    a.add_argument("keyword", nargs="+")
     a.add_argument("--city", required=True)
     a.add_argument("--area", default="")
     for name in ("pick", "cms", "write", "qc"):
         s = sub.add_parser(name)
         s.add_argument("--limit", type=int, default=0)
-        s.add_argument("--row", default="", help="only this keyword")
+        s.add_argument("--row", action="append", default=[], help="only this keyword (repeatable)")
     d = sub.add_parser("docx", help="rebuild blog.docx from blog.md")
-    d.add_argument("--row", default="", help="only this keyword")
+    d.add_argument("--row", action="append", default=[], help="only this keyword (repeatable)")
+    sh_ = sub.add_parser("show", help="numbered school list for picked blogs")
+    sh_.add_argument("--row", action="append", default=[], help="only this keyword (repeatable)")
+    ap = sub.add_parser("approve", help="tick chosen schools and set the blog to approved")
+    ap.add_argument("--row", action="append", default=[], required=True)
+    ap.add_argument("--schools", required=True, help='e.g. "1-10" or "1-12 drop 4,7"')
     sub.add_parser("names", help="Semrush paste list of school names missing a volume")
     sub.add_parser("volumes", help="fill Vol from Semrush exports in data/semrush/")
     sub.add_parser("status")
@@ -294,7 +355,8 @@ def main():
     sh = sheet.open_sheet()
     {"setup": cmd_setup, "add": cmd_add, "pick": cmd_pick, "cms": cmd_cms,
      "write": cmd_write, "qc": cmd_qc, "status": cmd_status,
-     "names": cmd_names, "volumes": cmd_volumes, "docx": cmd_docx}[args.cmd](sh, args)
+     "names": cmd_names, "volumes": cmd_volumes, "docx": cmd_docx,
+     "show": cmd_show, "approve": cmd_approve}[args.cmd](sh, args)
 
 
 if __name__ == "__main__":

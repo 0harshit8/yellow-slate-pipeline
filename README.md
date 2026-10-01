@@ -17,6 +17,12 @@ new -> pick -> picked -> (you tick 8-12 schools, set approved) -> cms -> cms_don
 4. Create a Google Sheet, share it (Editor) with the service account email in your key file,
    put its ID in `.env` as `SHEET_ID`, then run `python pipeline.py setup`.
 
+## From chat (easiest)
+
+Open Claude Code in this folder and talk to it. The `blog-pipeline` skill adds keywords, asks which
+ones to work on, shows each school list numbered so you choose in chat ("1-12 drop 4,7"), then runs
+cms, write and qc straight through and reports QC, time and cost per blog. You never edit the sheet.
+
 ## Daily use
 
 ```
@@ -29,7 +35,8 @@ python pipeline.py qc
 python pipeline.py status
 ```
 
-Every stage takes `--row "<keyword>"` to run a single keyword, and `--limit N`.
+Every stage takes `--row "<keyword>"` (repeatable, for several keywords) and `--limit N`. `add` takes several keywords at once.
+`show` prints the numbered school list for picked blogs; `approve --row KW --schools "1-10"` ticks those and sets the blog to approved.
 A failed row keeps its status and gets an Error note, so rerunning a stage retries only the failures.
 
 ## CMS
