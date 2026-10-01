@@ -112,6 +112,20 @@ def slugify(text):
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
+def blog_slug(keyword, city):
+    """Yellow Slate blog URL pattern: best-schools-in-<area>-<city>.
+
+    'schools in Hauz Khas' + 'Delhi' -> 'best-schools-in-hauz-khas-delhi'
+    """
+    slug = slugify(keyword)
+    if not slug.startswith("best-"):
+        slug = "best-" + slug
+    city_slug = slugify(city)
+    if city_slug and not slug.endswith("-" + city_slug):
+        slug = f"{slug}-{city_slug}"
+    return slug
+
+
 def school_email(name):
     """schoolname+area@gmail.com, letters and digits only. Pass the cms_name()."""
     return re.sub(r"[^a-z0-9]", "", name.lower()) + "@gmail.com"

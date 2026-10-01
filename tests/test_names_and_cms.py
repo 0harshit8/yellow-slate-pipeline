@@ -61,3 +61,10 @@ def test_duplicate_email_rejected(cms):
     cms.create_school("X School Kalkaji", "Delhi", "Kalkaji", "x@gmail.com")
     with pytest.raises(CMSError):
         cms.create_school("X School Kalkaji 2", "Delhi", "Kalkaji", "x@gmail.com")
+
+
+def test_blog_slug():
+    from stages.names import blog_slug
+    assert blog_slug("schools in Hauz Khas", "Delhi") == "best-schools-in-hauz-khas-delhi"
+    assert blog_slug("Best Schools in Kalkaji", "Delhi") == "best-schools-in-kalkaji-delhi"
+    assert blog_slug("best schools in hauz khas delhi", "Delhi") == "best-schools-in-hauz-khas-delhi"

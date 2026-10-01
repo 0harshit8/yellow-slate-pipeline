@@ -36,7 +36,7 @@ from stages import cms as cms_stage
 from stages import pick as pick_stage
 from stages import qc as qc_stage
 from stages import write as write_stage
-from stages.names import slugify
+from stages.names import blog_slug
 
 S = sheet.SCHOOL_HEADERS
 
@@ -71,7 +71,7 @@ def cmd_add(sh, args):
     if any(b["Keyword"].strip().lower() == args.keyword.lower() for b in sheet.records(ws)):
         sys.exit(f"Already in the sheet: {args.keyword}")
     area = args.area or area_from_keyword(args.keyword)
-    sheet.append(ws, [[args.keyword, args.city, area, slugify(args.keyword), "new", "", "", "", ""]])
+    sheet.append(ws, [[args.keyword, args.city, area, blog_slug(args.keyword, args.city), "new", "", "", "", ""]])
     print(f"Added: {args.keyword} | {args.city} | {area}")
 
 
@@ -135,7 +135,7 @@ def cmd_write(sh, args):
         picked = [{"name": s["School"], "id": s["CMS ID"], "slug": s["CMS slug"]} for s in blog_schools(schools, kw)]
         print(f"write: {kw} ({len(picked)} schools). This takes a while...")
         try:
-            path = write_stage.write_blog(kw, b["City"], b["Area"], b["Slug"] or slugify(kw), picked)
+            path = write_stage.write_blog(kw, b["City"], b["Area"], b["Slug"] or blog_slug(kw, b["City"]), picked)
         except ClaudeError as err:
             sheet.set_blog(blogs_ws, b["_row"], error=f"write: {err}")
             print(f"  error: {err}")
@@ -149,7 +149,7 @@ def cmd_qc(sh, args):
     schools = sheet.records(schools_ws)
     for b in rows_in(sheet.records(blogs_ws), "written", args) + rows_in(sheet.records(blogs_ws), "qc_fail", args):
         kw = b["Keyword"].strip()
-        folder = os.path.join(config.OUTPUT_DIR, b["Slug"] or slugify(kw))
+        folder = os.path.join(config.OUTPUT_DIR, b["Slug"] or blog_slug(kw, b["City"]))
         blog = os.path.join(folder, "blog.md")
         if not os.path.exists(blog):
             sheet.set_blog(blogs_ws, b["_row"], error=f"qc: {blog} not found")

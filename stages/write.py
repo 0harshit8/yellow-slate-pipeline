@@ -22,7 +22,7 @@ def build_prompt(keyword, city, area, slug, schools):
         for i, s in enumerate(schools, 1)
     )
     return config.read_prompt("write_wrapper.md").format(
-        keyword=keyword, city=city, area=area, schools=lines, out_dir=out_dir(slug).replace("\\", "/"))
+        keyword=keyword, city=city, area=area, slug=slug, schools=lines, out_dir=out_dir(slug).replace("\\", "/"))
 
 
 def write_blog(keyword, city, area, slug, schools):
