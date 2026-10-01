@@ -93,18 +93,43 @@ def _validation(sheet_id, col, condition):
 
 
 def records(ws):
-    """Rows as dicts keyed by header, each with "_row" (1-based sheet row)."""
+    """Rows with a Keyword, as dicts keyed by header, each with "_row" (1-based sheet row).
+
+    Blank rows are skipped: the checkbox column pre-fills FALSE on every row, so
+    "has any value" doesn't mean "is a real row".
+    """
     values = ws.get_all_values()
     if not values:
         return []
     headers = values[0]
     out = []
     for i, row in enumerate(values[1:], start=2):
+        if not row or not row[0].strip():
+            continue
         row = row + [""] * (len(headers) - len(row))
         rec = dict(zip(headers, row))
         rec["_row"] = i
         out.append(rec)
     return out
+
+
+def append(ws, rows):
+    """Write rows starting at the first row with an empty column A.
+
+    Not ws.append_rows: Sheets' append skips past rows that only hold a FALSE
+    checkbox, which would drop new rows at the very bottom of the tab.
+    """
+    col_a = ws.col_values(1)
+    start = len(col_a) + 1
+    for i, v in enumerate(col_a[1:], start=2):
+        if not v.strip():
+            start = i
+            break
+    end = start + len(rows) - 1
+    if end > ws.row_count:
+        ws.add_rows(end - ws.row_count)
+    ws.update(values=rows, range_name=f"A{start}:{col_letter(len(rows[0]))}{end}",
+              value_input_option="USER_ENTERED")
 
 
 def update(ws, headers, row, fields):

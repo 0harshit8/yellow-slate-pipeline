@@ -71,8 +71,7 @@ def cmd_add(sh, args):
     if any(b["Keyword"].strip().lower() == args.keyword.lower() for b in sheet.records(ws)):
         sys.exit(f"Already in the sheet: {args.keyword}")
     area = args.area or area_from_keyword(args.keyword)
-    ws.append_row([args.keyword, args.city, area, slugify(args.keyword), "new", "", "", "", ""],
-                  value_input_option="USER_ENTERED")
+    sheet.append(ws, [[args.keyword, args.city, area, slugify(args.keyword), "new", "", "", "", ""]])
     print(f"Added: {args.keyword} | {args.city} | {area}")
 
 
@@ -92,7 +91,7 @@ def cmd_pick(sh, args):
             print("  no schools found")
             continue
         rows = [[kw, s["name"], s["count"], " ".join(s["sources"]), False, "", "", "", ""] for s in shortlist]
-        schools_ws.append_rows(rows, value_input_option="USER_ENTERED")
+        sheet.append(schools_ws, rows)
         sheet.set_blog(blogs_ws, b["_row"], status="picked")
         print(f"  {len(shortlist)} schools from {n_pages} pages. Top: "
               + ", ".join(f"{s['name']} ({s['count']})" for s in shortlist[:5]))
