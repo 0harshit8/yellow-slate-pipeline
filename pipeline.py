@@ -93,13 +93,17 @@ def cmd_pick(sh, args):
         print(f"pick: {kw}")
         try:
             shortlist, n_pages = pick_stage.candidates(kw, b["City"])
+            if not shortlist:  # Tavily extract or Claude sometimes comes back empty once; retry
+                print("  empty result, retrying once")
+                shortlist, n_pages = pick_stage.candidates(kw, b["City"])
         except (TavilyError, ClaudeError) as err:
             sheet.set_blog(blogs_ws, b["_row"], error=f"pick: {err}")
             print(f"  error: {err}")
             continue
         if not shortlist:
-            sheet.set_blog(blogs_ws, b["_row"], error="pick: no competitor school lists found")
-            print("  no schools found")
+            why = "no competitor pages could be read" if not n_pages else f"read {n_pages} pages but found no school lists"
+            sheet.set_blog(blogs_ws, b["_row"], error=f"pick: {why}")
+            print(f"  {why}")
             continue
         sheet.write_pick(schools_ws, kw, shortlist)
         os.makedirs(blog_folder(b), exist_ok=True)
@@ -151,7 +155,7 @@ def cmd_volumes(sh, args):
                 continue
             term = semrush_term(s["name"], b.get("Area", ""), b.get("City", ""))
             if term in found:
-                cells.append((s["row"], block["col"], found[term]))
+                cells.append((s["row"], found[term]))
             else:
                 missing.append(term)
     sheet.set_volumes(ws, cells)
@@ -195,6 +199,7 @@ def cmd_cms(sh, args):
             print(f"  error: {failed}")
             continue
         sheet.set_blog(blogs_ws, b["_row"], status="cms_done")
+        sheet.archive_block(sh, kw)
 
 
 def cmd_write(sh, args):

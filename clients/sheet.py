@@ -5,8 +5,9 @@ because a service account can't own Drive files. Then `python pipeline.py setup`
 
 Tabs
   Blogs          one row per keyword, Status drives the pipeline
-  Schools        Harshit's view: one 4-column block per blog (School | Count | Vol | ✓),
-                 blogs side by side like his old tracker
+  Schools        Harshit's approval queue: only blogs waiting for approval, stacked
+                 top to bottom (yellow keyword bar, then School | Count | Vol | ✓)
+  Schools archive  flat record of every processed blog's candidates, moved here after cms
   CMS            pipeline's record: CMS ID + slug per approved school
   Weekly review  formulas only, for the weekly call
 """
@@ -26,17 +27,16 @@ BLOGS = "Blogs"
 SCHOOLS = "Schools"
 CMS = "CMS"
 WEEKLY = "Weekly review"
+ARCHIVE = "Schools archive"
 
 BLOG_HEADERS = ["Keyword", "City", "Area", "Slug", "Status", "Error", "Live link", "Minutes", "Updated"]
 CMS_HEADERS = ["Keyword", "School", "CMS name", "CMS ID", "CMS slug", "Created by us"]
+ARCHIVE_HEADERS = ["Keyword", "School", "Count", "Vol", "Approved"]
 STATUSES = ["new", "picked", "approved", "cms_done", "written", "qc_pass", "qc_fail", "published"]
 
-# Schools view geometry
-GROUP = ["School", "Count", "Vol", "✓"]
-WIDTH = len(GROUP)
-FIRST_ROW = 3           # row 1 keyword, row 2 sub-headers
+# Schools queue columns. E (blog) and F (row kind) are hidden bookkeeping.
+QUEUE_HEADERS = ["School", "Count", "Vol", "✓", "Blog", "Kind"]
 MAX_SCHOOLS = 15
-VIEW_ROWS = FIRST_ROW + MAX_SCHOOLS - 1
 
 
 def open_sheet():
@@ -62,17 +62,18 @@ def setup(sh):
     if BLOGS not in existing and "Sheet1" in existing:
         existing["Sheet1"].update_title(BLOGS)
         existing[BLOGS] = existing.pop("Sheet1")
-    for name, rows, cols in ((BLOGS, 1000, len(BLOG_HEADERS)), (SCHOOLS, VIEW_ROWS, WIDTH * 10),
-                             (CMS, 10000, len(CMS_HEADERS)), (WEEKLY, 30, 4)):
+    for name, rows, cols in ((BLOGS, 1000, len(BLOG_HEADERS)), (SCHOOLS, 500, len(QUEUE_HEADERS)),
+                             (ARCHIVE, 10000, len(ARCHIVE_HEADERS)), (CMS, 10000, len(CMS_HEADERS)),
+                             (WEEKLY, 30, 4)):
         if name not in existing:
             existing[name] = sh.add_worksheet(title=name, rows=rows, cols=cols)
 
-    for name, headers in ((BLOGS, BLOG_HEADERS), (CMS, CMS_HEADERS)):
+    for name, headers in ((BLOGS, BLOG_HEADERS), (CMS, CMS_HEADERS), (ARCHIVE, ARCHIVE_HEADERS)):
         ws = existing[name]
         ws.update(values=[headers], range_name="A1")
         ws.freeze(rows=1)
         ws.format(f"A1:{col_letter(len(headers))}1", {"textFormat": {"bold": True}})
-    existing[SCHOOLS].freeze(rows=2)
+    render_queue(existing[SCHOOLS], read_queue(existing[SCHOOLS]))
 
     status_col = BLOG_HEADERS.index("Status")
     sh.batch_update({"requests": [_validation(existing[BLOGS].id, 1, None, status_col, {
@@ -154,72 +155,110 @@ def set_blog(ws, row, status=None, error="", **extra):
 
 
 # --------------------------------------------------------------------------- #
-# Schools view: one column block per blog
+# Schools queue: blogs waiting for approval, stacked top to bottom
+
+YELLOW = {"red": 1.0, "green": 0.93, "blue": 0.6}
 
 
-def _grid(ws):
+def read_queue(ws):
+    """[{"keyword", "schools": [{"name", "count", "volume", "approved", "row"}]}] in sheet order."""
     values = ws.get_all_values()
-    width = max([len(r) for r in values] + [0])
-    return [r + [""] * (width - len(r)) for r in values] + [[""] * width] * max(0, VIEW_ROWS - len(values))
+    blocks, by_kw = [], {}
+    for i, row in enumerate(values[1:], start=2):
+        row = row + [""] * (len(QUEUE_HEADERS) - len(row))
+        name, count, vol, tick, kw, kind = (c.strip() for c in row[:6])
+        if not kw:
+            continue
+        if kw.lower() not in by_kw:
+            by_kw[kw.lower()] = {"keyword": kw, "schools": []}
+            blocks.append(by_kw[kw.lower()])
+        if kind == "school" and name:
+            by_kw[kw.lower()]["schools"].append({
+                "name": name, "count": count, "volume": vol,
+                "approved": tick.upper() == "TRUE", "row": i})
+    return blocks
 
 
 def read_picks(ws):
-    """{keyword_lower: {"keyword", "col", "schools": [{"name", "count", "volume", "approved", "row"}]}}.
-    "col" is the block's first column, 1-based."""
-    grid = _grid(ws)
-    if not grid:
-        return {}
-    out = {}
-    for c in range(0, len(grid[0]), WIDTH):
-        keyword = grid[0][c].strip()
-        if not keyword:
-            continue
-        schools = []
-        for r in range(FIRST_ROW - 1, min(len(grid), VIEW_ROWS)):
-            name = grid[r][c].strip()
-            if not name:
-                continue
-            schools.append({
-                "name": name,
-                "count": grid[r][c + 1],
-                "volume": grid[r][c + 2].strip(),
-                "approved": str(grid[r][c + 3]).strip().upper() == "TRUE",
-                "row": r + 1,
-            })
-        out[keyword.lower()] = {"keyword": keyword, "col": c + 1, "schools": schools}
-    return out
+    """{keyword_lower: block} view of read_queue."""
+    return {b["keyword"].lower(): b for b in read_queue(ws)}
+
+
+def render_queue(ws, blocks):
+    """Rewrite the whole queue tab from blocks, keeping ticks and volumes they carry.
+
+    Don't tick boxes while a pipeline command is running: a rewrite in the middle
+    of your edit would drop that tick.
+    """
+    rows = [QUEUE_HEADERS]
+    headers, schools = [], []  # 0-based row indexes
+    for b in blocks:
+        headers.append(len(rows))
+        kw = b["keyword"].replace('"', '""')
+        ticked = f'=COUNTIFS(E:E,"{kw}",F:F,"school",D:D,TRUE)&" of 8-12 ticked"'
+        rows.append([b["keyword"], ticked, "", "", b["keyword"], "blog"])
+        start = len(rows)
+        for s in b["schools"]:
+            rows.append([s["name"], s["count"], s["volume"], bool(s["approved"]), b["keyword"], "school"])
+        schools.append((start, len(rows)))
+        rows.append(["", "", "", "", "", ""])
+
+    need = max(len(rows) + 50, 200)
+    sid = ws.id
+    requests = [
+        {"updateCells": {"range": {"sheetId": sid}, "fields": "userEnteredValue,userEnteredFormat,dataValidation"}},
+    ]
+    ws.spreadsheet.batch_update({"requests": requests})
+    if ws.row_count < need:
+        ws.add_rows(need - ws.row_count)
+    ws.update(values=rows, range_name=f"A1:F{len(rows)}", value_input_option="USER_ENTERED")
+
+    def rng(r0, r1, c0=0, c1=4):
+        return {"sheetId": sid, "startRowIndex": r0, "endRowIndex": r1, "startColumnIndex": c0, "endColumnIndex": c1}
+
+    requests = [
+        {"repeatCell": {"range": rng(0, 1, 0, 6), "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+                        "fields": "userEnteredFormat.textFormat.bold"}},
+        {"updateSheetProperties": {"properties": {"sheetId": sid, "gridProperties": {"frozenRowCount": 1}},
+                                   "fields": "gridProperties.frozenRowCount"}},
+        {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": 4, "endIndex": 6},
+                                       "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
+        {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
+                                       "properties": {"pixelSize": 380}, "fields": "pixelSize"}},
+    ]
+    for h in headers:
+        requests.append({"repeatCell": {"range": rng(h, h + 1),
+                         "cell": {"userEnteredFormat": {"backgroundColor": YELLOW, "textFormat": {"bold": True}}},
+                         "fields": "userEnteredFormat(backgroundColor,textFormat)"}})
+    for r0, r1 in schools:
+        if r1 > r0:
+            requests.append(_validation(sid, r0, r1, 3, {"type": "BOOLEAN"}))
+    ws.spreadsheet.batch_update({"requests": requests})
 
 
 def write_pick(ws, keyword, shortlist):
-    """Write one blog's block: reuses the keyword's block if it exists, else the first empty one."""
-    picks = read_picks(ws)
-    if keyword.lower() in picks:
-        col = picks[keyword.lower()]["col"]
-    else:
-        used = [p["col"] for p in picks.values()]
-        col = (max(used) + WIDTH) if used else 1
-    last = col + WIDTH - 1
-    if last > ws.col_count:
-        ws.add_cols(last - ws.col_count + WIDTH * 10)
-    if VIEW_ROWS > ws.row_count:
-        ws.add_rows(VIEW_ROWS - ws.row_count)
+    """Add (or replace) one blog's block at the bottom of the queue."""
+    blocks = [b for b in read_queue(ws) if b["keyword"].lower() != keyword.lower()]
+    blocks.append({"keyword": keyword, "schools": [
+        {"name": s["name"], "count": s["count"], "volume": "", "approved": False}
+        for s in shortlist[:MAX_SCHOOLS]]})
+    render_queue(ws, blocks)
 
-    rows = [[keyword, "", "", ""], GROUP]
-    for s in shortlist[:MAX_SCHOOLS]:
-        rows.append([s["name"], s["count"], "", False])
-    rows += [["", "", "", ""]] * (VIEW_ROWS - len(rows))
-    rng = f"{col_letter(col)}1:{col_letter(last)}{VIEW_ROWS}"
-    ws.update(values=rows, range_name=rng, value_input_option="USER_ENTERED")
-    ws.format(f"{col_letter(col)}1:{col_letter(last)}2", {"textFormat": {"bold": True}})
-    n = len(shortlist[:MAX_SCHOOLS])
-    ws.spreadsheet.batch_update({"requests": [
-        _validation(ws.id, FIRST_ROW - 1, FIRST_ROW - 1 + n, col + 2, {"type": "BOOLEAN"}),
-    ]})
+
+def archive_block(sh, keyword):
+    """Move a processed blog's block from the queue to the archive tab."""
+    ws = sh.worksheet(SCHOOLS)
+    blocks = read_queue(ws)
+    gone = [b for b in blocks if b["keyword"].lower() == keyword.lower()]
+    if not gone:
+        return
+    append(sh.worksheet(ARCHIVE), [[keyword, s["name"], s["count"], s["volume"], "y" if s["approved"] else ""]
+                                   for s in gone[0]["schools"]])
+    render_queue(ws, [b for b in blocks if b["keyword"].lower() != keyword.lower()])
 
 
 def set_volumes(ws, cells):
-    """cells: [(row, block_col, volume)]. Writes into the Vol column of each block."""
+    """cells: [(row, volume)]. Writes straight into column C, so ticks aren't touched."""
     if not cells:
         return
-    data = [{"range": f"{col_letter(c + 2)}{r}", "values": [[v]]} for r, c, v in cells]
-    ws.batch_update(data, value_input_option="USER_ENTERED")
+    ws.batch_update([{"range": f"C{r}", "values": [[v]]} for r, v in cells], value_input_option="USER_ENTERED")
