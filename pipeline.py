@@ -14,6 +14,8 @@ Commands
   python pipeline.py cms    [--limit N] [--row KEYWORD]
   python pipeline.py write  [--limit N] [--row KEYWORD]
   python pipeline.py qc     [--limit N] [--row KEYWORD]
+  python pipeline.py names                       Semrush paste list (bare school names, 100 per batch)
+  python pipeline.py volumes                     fill Vol from Semrush exports in data/semrush/
   python pipeline.py status
 
 Each stage only takes rows in the status before it. A failed row keeps its status and
@@ -36,10 +38,10 @@ from stages import cms as cms_stage
 from stages import pick as pick_stage
 from stages import qc as qc_stage
 from stages import write as write_stage
-from stages.names import blog_slug
+from stages.names import blog_slug, semrush_term
+from stages.semrush import semrush_volumes
 
-S = sheet.SCHOOL_HEADERS
-
+SEMRUSH_DIR = os.path.join(config.DATA_DIR, "semrush")
 
 def area_from_keyword(keyword):
     m = re.search(r"\bin\s+(.+)$", keyword, re.I)
@@ -53,9 +55,18 @@ def rows_in(blogs, status, args):
     return rows[: args.limit] if args.limit else rows
 
 
-def blog_schools(schools, keyword, ticked_only=True):
-    out = [s for s in schools if s["Keyword"].strip().lower() == keyword.strip().lower()]
-    return [s for s in out if sheet.is_ticked(s["Approve"])] if ticked_only else out
+def approved_schools(picks, keyword):
+    """Ticked schools for a blog, in the order they appear in its block."""
+    block = picks.get(keyword.strip().lower())
+    return [s for s in block["schools"] if s["approved"]] if block else []
+
+
+def cms_rows(cms_records, keyword):
+    return [r for r in cms_records if r["Keyword"].strip().lower() == keyword.strip().lower()]
+
+
+def blog_folder(b):
+    return os.path.join(config.OUTPUT_DIR, b["Slug"] or blog_slug(b["Keyword"], b["City"]))
 
 
 # --------------------------------------------------------------------------- #
@@ -63,7 +74,7 @@ def blog_schools(schools, keyword, ticked_only=True):
 
 def cmd_setup(sh, args):
     sheet.setup(sh)
-    print("Sheet ready: Blogs, Schools, Weekly review.")
+    print("Sheet ready: Blogs, Schools, CMS, Weekly review.")
 
 
 def cmd_add(sh, args):
@@ -90,20 +101,73 @@ def cmd_pick(sh, args):
             sheet.set_blog(blogs_ws, b["_row"], error="pick: no competitor school lists found")
             print("  no schools found")
             continue
-        rows = [[kw, s["name"], s["count"], " ".join(s["sources"]), False, "", "", "", ""] for s in shortlist]
-        sheet.append(schools_ws, rows)
+        sheet.write_pick(schools_ws, kw, shortlist)
+        os.makedirs(blog_folder(b), exist_ok=True)
+        with open(os.path.join(blog_folder(b), "pick.json"), "w", encoding="utf-8") as fh:
+            json.dump(shortlist, fh, indent=2)
         sheet.set_blog(blogs_ws, b["_row"], status="picked")
         print(f"  {len(shortlist)} schools from {n_pages} pages. Top: "
               + ", ".join(f"{s['name']} ({s['count']})" for s in shortlist[:5]))
 
 
+def cmd_names(sh, args):
+    """Paste-ready list of bare school names that still need a volume, 100 per Semrush batch."""
+    blogs = {b["Keyword"].strip().lower(): b for b in sheet.records(sh.worksheet(sheet.BLOGS))}
+    terms = []
+    for key, block in sheet.read_picks(sh.worksheet(sheet.SCHOOLS)).items():
+        b = blogs.get(key, {})
+        for s in block["schools"]:
+            if not s["volume"]:
+                terms.append(semrush_term(s["name"], b.get("Area", ""), b.get("City", "")))
+    terms = sorted(set(t for t in terms if t))
+    if not terms:
+        print("Every school already has a volume.")
+        return
+    os.makedirs(SEMRUSH_DIR, exist_ok=True)
+    path = os.path.join(config.DATA_DIR, "semrush_list.txt")
+    chunks = [terms[i:i + 100] for i in range(0, len(terms), 100)]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n\n".join("\n".join(c) for c in chunks) + "\n")
+    print(f"{len(terms)} names in {len(chunks)} batch(es) of up to 100, saved to {path}\n")
+    for i, c in enumerate(chunks, 1):
+        print(f"--- batch {i} ---")
+        print("\n".join(c))
+    print(f"\nSemrush: Keyword Overview -> bulk, database India, paste a batch, export, "
+          f"save the file into {SEMRUSH_DIR}, then run: python pipeline.py volumes")
+
+
+def cmd_volumes(sh, args):
+    """Fill the Vol column from Semrush exports in data/semrush/."""
+    found = semrush_volumes(SEMRUSH_DIR)
+    if not found:
+        sys.exit(f"No Semrush exports with Keyword + Volume columns in {SEMRUSH_DIR}")
+    blogs = {b["Keyword"].strip().lower(): b for b in sheet.records(sh.worksheet(sheet.BLOGS))}
+    ws = sh.worksheet(sheet.SCHOOLS)
+    cells, missing = [], []
+    for key, block in sheet.read_picks(ws).items():
+        b = blogs.get(key, {})
+        for s in block["schools"]:
+            if s["volume"]:
+                continue
+            term = semrush_term(s["name"], b.get("Area", ""), b.get("City", ""))
+            if term in found:
+                cells.append((s["row"], block["col"], found[term]))
+            else:
+                missing.append(term)
+    sheet.set_volumes(ws, cells)
+    print(f"Filled {len(cells)} volumes from {len(found)} Semrush keywords.")
+    if missing:
+        print(f"{len(set(missing))} not in the exports yet: " + ", ".join(sorted(set(missing))[:20]))
+
+
 def cmd_cms(sh, args):
-    blogs_ws, schools_ws = sh.worksheet(sheet.BLOGS), sh.worksheet(sheet.SCHOOLS)
+    blogs_ws, cms_ws = sh.worksheet(sheet.BLOGS), sh.worksheet(sheet.CMS)
     cms = get_cms()
-    schools = sheet.records(schools_ws)
+    picks = sheet.read_picks(sh.worksheet(sheet.SCHOOLS))
+    done = sheet.records(cms_ws)
     for b in rows_in(sheet.records(blogs_ws), "approved", args):
         kw, city, area = b["Keyword"].strip(), b["City"].strip(), b["Area"].strip()
-        picked = blog_schools(schools, kw)
+        picked = approved_schools(picks, kw)
         if not city or not area:
             sheet.set_blog(blogs_ws, b["_row"], error="cms: City and Area must be filled")
             continue
@@ -112,27 +176,33 @@ def cmd_cms(sh, args):
             print(f"cms: {kw}: {len(picked)} ticked, skipped")
             continue
         print(f"cms: {kw}")
-        try:
-            for s in picked:
-                if s["CMS ID"].strip():
-                    continue  # done on an earlier run
-                res = cms_stage.ensure_school(cms, s["School"], city, area)
-                sheet.update(schools_ws, S, s["_row"], {
-                    "CMS ID": res["id"], "CMS slug": res["slug"], "Created by us": "y" if res["created"] else "n"})
-                print(f"  {'created' if res['created'] else 'exists '} {res['id']} {res['name']}")
-        except CMSError as err:
-            sheet.set_blog(blogs_ws, b["_row"], error=f"cms: {err}")
-            print(f"  error: {err}")
+        have = {r["School"].strip().lower() for r in cms_rows(done, kw) if r["CMS ID"].strip()}
+        new_rows, failed = [], None
+        for s in picked:
+            if s["name"].lower() in have:
+                continue  # done on an earlier run
+            try:
+                res = cms_stage.ensure_school(cms, s["name"], city, area)
+            except CMSError as err:
+                failed = err
+                break
+            new_rows.append([kw, s["name"], res["name"], res["id"], res["slug"], "y" if res["created"] else "n"])
+            print(f"  {'created' if res['created'] else 'exists '} {res['id']} {res['name']}")
+        if new_rows:
+            sheet.append(cms_ws, new_rows)  # keep what succeeded, even if a later school failed
+        if failed:
+            sheet.set_blog(blogs_ws, b["_row"], error=f"cms: {failed}")
+            print(f"  error: {failed}")
             continue
         sheet.set_blog(blogs_ws, b["_row"], status="cms_done")
 
 
 def cmd_write(sh, args):
-    blogs_ws, schools_ws = sh.worksheet(sheet.BLOGS), sh.worksheet(sheet.SCHOOLS)
-    schools = sheet.records(schools_ws)
+    blogs_ws = sh.worksheet(sheet.BLOGS)
+    done = sheet.records(sh.worksheet(sheet.CMS))
     for b in rows_in(sheet.records(blogs_ws), "cms_done", args):
         kw = b["Keyword"].strip()
-        picked = [{"name": s["School"], "id": s["CMS ID"], "slug": s["CMS slug"]} for s in blog_schools(schools, kw)]
+        picked = [{"name": r["CMS name"], "id": r["CMS ID"], "slug": r["CMS slug"]} for r in cms_rows(done, kw)]
         print(f"write: {kw} ({len(picked)} schools). This takes a while...")
         try:
             path = write_stage.write_blog(kw, b["City"], b["Area"], b["Slug"] or blog_slug(kw, b["City"]), picked)
@@ -145,18 +215,19 @@ def cmd_write(sh, args):
 
 
 def cmd_qc(sh, args):
-    blogs_ws, schools_ws = sh.worksheet(sheet.BLOGS), sh.worksheet(sheet.SCHOOLS)
-    schools = sheet.records(schools_ws)
-    for b in rows_in(sheet.records(blogs_ws), "written", args) + rows_in(sheet.records(blogs_ws), "qc_fail", args):
+    blogs_ws = sh.worksheet(sheet.BLOGS)
+    done = sheet.records(sh.worksheet(sheet.CMS))
+    blogs = sheet.records(blogs_ws)
+    for b in rows_in(blogs, "written", args) + rows_in(blogs, "qc_fail", args):
         kw = b["Keyword"].strip()
-        folder = os.path.join(config.OUTPUT_DIR, b["Slug"] or blog_slug(kw, b["City"]))
+        folder = blog_folder(b)
         blog = os.path.join(folder, "blog.md")
         if not os.path.exists(blog):
             sheet.set_blog(blogs_ws, b["_row"], error=f"qc: {blog} not found")
             continue
         with open(blog, encoding="utf-8") as fh:
             md = fh.read()
-        ids = [s["CMS ID"] for s in blog_schools(schools, kw) if s["CMS ID"].strip()]
+        ids = [r["CMS ID"] for r in cms_rows(done, kw) if r["CMS ID"].strip()]
         meta_path = os.path.join(folder, "meta.json")
         meta = json.load(open(meta_path, encoding="utf-8")) if os.path.exists(meta_path) else {}
         passed, lines = qc_stage.check_blog(md, kw, expected_ids=ids, folder=folder, meta=meta)
@@ -191,12 +262,15 @@ def main():
         s = sub.add_parser(name)
         s.add_argument("--limit", type=int, default=0)
         s.add_argument("--row", default="", help="only this keyword")
+    sub.add_parser("names", help="Semrush paste list of school names missing a volume")
+    sub.add_parser("volumes", help="fill Vol from Semrush exports in data/semrush/")
     sub.add_parser("status")
     args = p.parse_args()
 
     sh = sheet.open_sheet()
     {"setup": cmd_setup, "add": cmd_add, "pick": cmd_pick, "cms": cmd_cms,
-     "write": cmd_write, "qc": cmd_qc, "status": cmd_status}[args.cmd](sh, args)
+     "write": cmd_write, "qc": cmd_qc, "status": cmd_status,
+     "names": cmd_names, "volumes": cmd_volumes}[args.cmd](sh, args)
 
 
 if __name__ == "__main__":

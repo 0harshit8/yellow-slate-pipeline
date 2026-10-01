@@ -126,6 +126,20 @@ def blog_slug(keyword, city):
     return slug
 
 
+def semrush_term(name, area="", city=""):
+    """Bare school name for a Semrush lookup: no area, no city, no ', GK-II' style suffix.
+
+    'K.R. Mangalam World School, GK-II' -> 'k r mangalam world school'
+    'Dbra Cm Shri School Kalkaji' (area Kalkaji) -> 'dbra cm shri school'
+    """
+    n = re.sub(r",.*$", "", name)
+    for place in (area, city):
+        if place:
+            n = re.sub(rf"\b{re.escape(place)}\b", " ", n, flags=re.I)
+    n = re.sub(r"[^a-z0-9 ]", " ", n.lower())
+    return " ".join(n.split()[:10])[:80].strip()
+
+
 def school_email(name):
     """schoolname+area@gmail.com, letters and digits only. Pass the cms_name()."""
     return re.sub(r"[^a-z0-9]", "", name.lower()) + "@gmail.com"
