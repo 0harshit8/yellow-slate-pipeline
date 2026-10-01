@@ -24,3 +24,17 @@ def test_bad_review_data_gives_no_graph(tmp_path):
     problems = assets.process(str(tmp_path))
     assert any("no category review percentages" in p for p in problems)
     assert "<!--" not in (tmp_path / "blog.md").read_text()
+
+
+def test_docx_export(tmp_path):
+    from docx import Document
+    from stages import docx_export
+    (tmp_path / "blog.md").write_text(
+        "Intro about schools in Kalkaji.\n\n## 1. A School\n\n[btn_admissions id=\"1\"]\n\n"
+        "- [A School](https://yellowslate.com/delhi/a) is **great**.\n- two\n- three\n\n"
+        "| Detail | Information |\n| --- | --- |\n| Board | CBSE |\n", encoding="utf-8")
+    (tmp_path / "meta.json").write_text(json.dumps({"title": "T", "meta_title": "M", "meta_description": "D", "slug": "s"}))
+    d = Document(docx_export.export(str(tmp_path)))
+    text = "\n".join(p.text for p in d.paragraphs)
+    assert "Meta title: M" in text and '[btn_admissions id="1"]' in text and "A School is great." in text
+    assert len(d.tables) == 1 and d.tables[0].cell(1, 1).text == "CBSE"

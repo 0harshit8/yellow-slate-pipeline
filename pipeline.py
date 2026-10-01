@@ -16,6 +16,7 @@ Commands
   python pipeline.py qc     [--limit N] [--row KEYWORD]
   python pipeline.py names                       Semrush paste list (bare school names, 100 per batch)
   python pipeline.py volumes                     fill Vol from Semrush exports in data/semrush/
+  python pipeline.py docx   [--row KEYWORD]       rebuild blog.docx (to share) from blog.md
   python pipeline.py status
 
 Each stage only takes rows in the status before it. A failed row keeps its status and
@@ -246,6 +247,20 @@ def cmd_qc(sh, args):
         print(f"qc: {kw}: {'PASS' if passed else f'{len(fails)} issues'}")
 
 
+def cmd_docx(sh, args):
+    """Rebuild blog.docx from blog.md, e.g. after hand edits. Any blog that has been written."""
+    from stages import docx_export
+    for b in sheet.records(sh.worksheet(sheet.BLOGS)):
+        if args.row and b["Keyword"].strip().lower() != args.row.lower():
+            continue
+        folder = blog_folder(b)
+        if os.path.exists(os.path.join(folder, "blog.md")):
+            try:
+                print(f"docx: {docx_export.export(folder)}")
+            except PermissionError as err:
+                print(f"docx: {err}")
+
+
 def cmd_status(sh, args):
     blogs = sheet.records(sh.worksheet(sheet.BLOGS))
     counts = Counter(b["Status"].strip() or "(blank)" for b in blogs)
@@ -269,6 +284,8 @@ def main():
         s = sub.add_parser(name)
         s.add_argument("--limit", type=int, default=0)
         s.add_argument("--row", default="", help="only this keyword")
+    d = sub.add_parser("docx", help="rebuild blog.docx from blog.md")
+    d.add_argument("--row", default="", help="only this keyword")
     sub.add_parser("names", help="Semrush paste list of school names missing a volume")
     sub.add_parser("volumes", help="fill Vol from Semrush exports in data/semrush/")
     sub.add_parser("status")
@@ -277,7 +294,7 @@ def main():
     sh = sheet.open_sheet()
     {"setup": cmd_setup, "add": cmd_add, "pick": cmd_pick, "cms": cmd_cms,
      "write": cmd_write, "qc": cmd_qc, "status": cmd_status,
-     "names": cmd_names, "volumes": cmd_volumes}[args.cmd](sh, args)
+     "names": cmd_names, "volumes": cmd_volumes, "docx": cmd_docx}[args.cmd](sh, args)
 
 
 if __name__ == "__main__":

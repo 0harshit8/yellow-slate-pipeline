@@ -6,7 +6,7 @@ import os
 import config
 from clients import claude_cli
 from clients.cms_base import profile_url
-from stages import assets
+from stages import assets, docx_export
 
 # No shell: images and graphs are done by stages/assets.py after the run.
 TOOLS = ["Skill", "WebSearch", "WebFetch", "Read", "Write", "Edit", "Glob", "Grep"]
@@ -43,4 +43,9 @@ def write_blog(keyword, city, area, slug, schools):
         raise claude_cli.ClaudeError(f"no blog.md written. Claude said: {result[:300]}")
     if result.upper().startswith("FAILED"):
         raise claude_cli.ClaudeError(result[:300])
-    return blog, assets.process(folder)
+    problems = assets.process(folder)
+    try:
+        docx_export.export(folder)
+    except PermissionError as err:
+        problems.append(str(err))
+    return blog, problems
