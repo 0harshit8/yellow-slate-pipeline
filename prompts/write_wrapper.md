@@ -23,6 +23,7 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
    - `{out_dir}/meta.json` with keys `title`, `meta_title`, `meta_description`, `slug` (use the slug given above; primary keyword in title and meta_title).
    - `{out_dir}/assets.json` as above.
    - `{out_dir}/notes.md`: a short list of missing data, conflicting sources and anything a human should check before publishing.
-8. Run the skill's quality checklist yourself before finishing (images and graphs excepted, the pipeline adds them).
+8. **Only read files in the skill folder and in `{out_dir}`.** Don't open, list or search other folders under `output/` or `data/`: they hold other blogs and old runs, and copying from them mixes up schools.
+9. Run the skill's quality checklist yourself before finishing (images and graphs excepted, the pipeline adds them).
 
 When done, reply with one line: DONE or FAILED: <reason>.

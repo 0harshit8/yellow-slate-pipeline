@@ -23,13 +23,21 @@ Run `python pipeline.py status`. Show the counts in one line, for example "12 ne
 - For `new` rows, ask which keywords or how many. "first 5" means the first 5 `new` rows in sheet order.
 - Run `python pipeline.py pick --row "<kw>" --row "<kw>" ...`. About 1 minute per keyword. Report any keyword that errored and why.
 
-## 3. Choosing schools (in chat)
+## 3. Choosing schools by search volume
 
-Run `python pipeline.py show --row "<kw>"` for each picked keyword and paste the numbered list as is. Ask the user to choose 8-12, accepting replies like `1-10`, `1-12 drop 4,7`, `all drop 3`.
+The rule: every school with search volume 100 or more, highest first, at most 12. If fewer than 8 reach 100, top up with the next highest volumes until there are 8. Ties go to the school more competitor pages listed. `suggest` applies it; don't apply it by hand.
 
-- Before they answer, flag anything worth a second look: government schools with codes in the name (GBSSS, GGSS, SKV), the same school listed twice under different names, a school that looks like it belongs to another area. Do not drop anything yourself.
-- Run `python pipeline.py approve --row "<kw>" --schools "<their reply>"`. If it refuses (fewer than 8, more than 12, bad numbers), show the message and ask again.
-- Go through every picked keyword the user wants written, then go to step 4.
+**a. Get volumes.** Run `python pipeline.py show --row "<kw>"` and paste the numbered lists. Ask for volumes, any way the user likes:
+- **Screenshot** (Semrush or any tool): read each school name and volume off the image, match it to the numbered list by name (not by position), and show the matches before writing. A school not in the screenshot gets 0, say so.
+- **Typed in chat** like `1: 320, 2: 90`.
+- Either way, write them with `python pipeline.py setvol --row "<kw>" --vols "1:320, 2:90, 5:1500"`.
+- **Semrush export file** in `data/semrush/`: run `python pipeline.py volumes`. `python pipeline.py names` prints the names to paste into Semrush.
+
+**b. Suggest.** Run `python pipeline.py suggest --row "<kw>" ...` and paste the result. Mark top-ups clearly. Also flag anything worth a second look: government schools with codes in the name (GBSSS, GGSS, SKV), the same school listed twice under different names, a school that looks like it belongs to another area. Don't drop anything yourself. Ask "ok?" once for the whole batch.
+
+**c. Approve.** On "ok", run `python pipeline.py approve --row "<kw>" --schools "<the selection line from suggest>"` per keyword. If the user changes one ("drop 9, add 12"), adjust that selection (it accepts `1-12 drop 4,7` style too). If approve refuses (fewer than 8, more than 12), show why and ask again.
+
+Then go to step 4.
 
 ## 4. Running straight through
 

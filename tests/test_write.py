@@ -10,7 +10,7 @@ def test_previous_output_moved_aside(tmp_path):
     moved = write.clear_previous(str(folder))
     assert not folder.exists() or not os.listdir(folder)
     assert open(os.path.join(moved, "blog.md")).read() == "old blog"
-    assert os.path.basename(os.path.dirname(moved)) == "_previous"
+    assert os.path.dirname(moved) == str(tmp_path / "data" / "previous_runs")  # outside output/
 
 
 def test_no_previous_output_is_a_noop(tmp_path):

@@ -19,6 +19,8 @@ Commands
   python pipeline.py docx   [--row KEYWORD]       rebuild blog.docx (to share) from blog.md
   python pipeline.py show   [--row KEYWORD]       numbered school list for picked blogs
   python pipeline.py approve --row KEYWORD --schools "1-12 drop 4,7"   tick those, set approved
+  python pipeline.py setvol --row KEYWORD --vols "1:320, 2:90"   volumes typed in or read off a screenshot
+  python pipeline.py suggest [--row KEYWORD]    schools chosen by the volume rule (100+, max 12, top up to 8)
   python pipeline.py status
 
 --row can be given more than once to cover several keywords.
@@ -44,7 +46,7 @@ from stages import pick as pick_stage
 from stages import qc as qc_stage
 from stages import write as write_stage
 from stages.names import blog_slug, semrush_term
-from stages.selection import new_keywords, parse_selection
+from stages.selection import new_keywords, parse_selection, parse_vols, suggest_schools
 from stages.semrush import semrush_volumes
 
 SEMRUSH_DIR = os.path.join(config.DATA_DIR, "semrush")
@@ -293,6 +295,52 @@ def cmd_show(sh, args):
             print(f"  {i:>2}. {s['name']}  count {s['count']}{vol}{tick}")
 
 
+def _one_block(sh, args, cmd):
+    if len(args.row) != 1:
+        sys.exit(f"{cmd} takes exactly one --row")
+    rows = rows_in(sheet.records(sh.worksheet(sheet.BLOGS)), "picked", args)
+    if not rows:
+        sys.exit(f"No picked blog called '{args.row[0]}'")
+    block = sheet.read_picks(sh.worksheet(sheet.SCHOOLS)).get(rows[0]["Keyword"].strip().lower())
+    if not block:
+        sys.exit(f"{rows[0]['Keyword']}: no school list in the Schools tab")
+    return rows[0], block
+
+
+def cmd_setvol(sh, args):
+    """Write volumes by list number, e.g. from a screenshot or typed in chat."""
+    b, block = _one_block(sh, args, "setvol")
+    try:
+        vols = parse_vols(args.vols, len(block["schools"]))
+    except ValueError as err:
+        sys.exit(f"Can't use '{args.vols}': {err}")
+    sheet.set_volumes(sh.worksheet(sheet.SCHOOLS), [(block["schools"][n - 1]["row"], v) for n, v in vols.items()])
+    for n, v in sorted(vols.items()):
+        print(f"  {n:>2}. {block['schools'][n - 1]['name']}: {v}")
+    left = len(block["schools"]) - len({n for n in range(1, len(block["schools"]) + 1)
+                                        if block["schools"][n - 1]["volume"] or n in vols})
+    print(f"{b['Keyword']}: {len(vols)} volumes set, {left} still blank")
+
+
+def cmd_suggest(sh, args):
+    """Schools chosen by the volume rule, per picked blog, with the selection to pass to approve."""
+    picks = sheet.read_picks(sh.worksheet(sheet.SCHOOLS))
+    for b in rows_in(sheet.records(sh.worksheet(sheet.BLOGS)), "picked", args):
+        block = picks.get(b["Keyword"].strip().lower())
+        if not block:
+            continue
+        try:
+            nums, topup = suggest_schools(block["schools"])
+        except ValueError as err:
+            print(f"\n{b['Keyword']}: {err}")
+            continue
+        print(f"\n{b['Keyword']}: {len(nums)} chosen")
+        for n in nums:
+            s = block["schools"][n - 1]
+            print(f"  {n:>2}. {s['name']}  vol {s['volume']}{'  (top-up)' if n in topup else ''}")
+        print(f"  selection: {','.join(map(str, sorted(nums)))}")
+
+
 def cmd_approve(sh, args):
     """Tick the chosen schools for one picked blog and set it to approved."""
     if len(args.row) != 1:
@@ -344,6 +392,11 @@ def main():
     d.add_argument("--row", action="append", default=[], help="only this keyword (repeatable)")
     sh_ = sub.add_parser("show", help="numbered school list for picked blogs")
     sh_.add_argument("--row", action="append", default=[], help="only this keyword (repeatable)")
+    sv = sub.add_parser("setvol", help="write volumes by list number")
+    sv.add_argument("--row", action="append", default=[], required=True)
+    sv.add_argument("--vols", required=True, help='e.g. "1:320, 2:90, 5:1,500"')
+    sg = sub.add_parser("suggest", help="schools chosen by the volume rule")
+    sg.add_argument("--row", action="append", default=[], help="only this keyword (repeatable)")
     ap = sub.add_parser("approve", help="tick chosen schools and set the blog to approved")
     ap.add_argument("--row", action="append", default=[], required=True)
     ap.add_argument("--schools", required=True, help='e.g. "1-10" or "1-12 drop 4,7"')
@@ -356,7 +409,7 @@ def main():
     {"setup": cmd_setup, "add": cmd_add, "pick": cmd_pick, "cms": cmd_cms,
      "write": cmd_write, "qc": cmd_qc, "status": cmd_status,
      "names": cmd_names, "volumes": cmd_volumes, "docx": cmd_docx,
-     "show": cmd_show, "approve": cmd_approve}[args.cmd](sh, args)
+     "show": cmd_show, "approve": cmd_approve, "setvol": cmd_setvol, "suggest": cmd_suggest}[args.cmd](sh, args)
 
 
 if __name__ == "__main__":

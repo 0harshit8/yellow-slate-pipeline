@@ -29,11 +29,11 @@ def build_prompt(keyword, city, area, slug, schools):
 
 
 def clear_previous(folder):
-    """Move an earlier run's folder to output/_previous/<slug>-<stamp>, so the writer starts
+    """Move an earlier run's folder to data/previous_runs/<slug>-<stamp>, so the writer starts
     empty instead of finding the old blog.md and patching it. Returns the new path, or None."""
     if not os.path.isdir(folder) or not os.listdir(folder):
         return None
-    dest = os.path.join(os.path.dirname(folder), "_previous",
+    dest = os.path.join(os.path.dirname(os.path.dirname(folder)), "data", "previous_runs",
                         f"{os.path.basename(folder)}-{time.strftime('%Y%m%d-%H%M%S')}")
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     shutil.move(folder, dest)
