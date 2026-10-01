@@ -210,13 +210,15 @@ def cmd_write(sh, args):
         picked = [{"name": r["CMS name"], "id": r["CMS ID"], "slug": r["CMS slug"]} for r in cms_rows(done, kw)]
         print(f"write: {kw} ({len(picked)} schools). This takes a while...")
         try:
-            path = write_stage.write_blog(kw, b["City"], b["Area"], b["Slug"] or blog_slug(kw, b["City"]), picked)
+            path, problems = write_stage.write_blog(kw, b["City"], b["Area"], b["Slug"] or blog_slug(kw, b["City"]), picked)
         except ClaudeError as err:
             sheet.set_blog(blogs_ws, b["_row"], error=f"write: {err}")
             print(f"  error: {err}")
             continue
         sheet.set_blog(blogs_ws, b["_row"], status="written")
         print(f"  saved {path}")
+        for p in problems:
+            print(f"  asset: {p}")
 
 
 def cmd_qc(sh, args):

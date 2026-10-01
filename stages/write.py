@@ -6,9 +6,10 @@ import os
 import config
 from clients import claude_cli
 from clients.cms_base import profile_url
+from stages import assets
 
-TOOLS = ["Skill", "WebSearch", "WebFetch", "Read", "Write", "Edit", "Glob",
-         "Bash(curl:*)", "Bash(python:*)", "Bash(mkdir:*)"]
+# No shell: images and graphs are done by stages/assets.py after the run.
+TOOLS = ["Skill", "WebSearch", "WebFetch", "Read", "Write", "Edit", "Glob", "Grep"]
 
 
 def out_dir(slug):
@@ -30,7 +31,8 @@ def write_blog(keyword, city, area, slug, schools):
     folder = os.path.join(config.ROOT, out_dir(slug))
     os.makedirs(folder, exist_ok=True)
     envelope = claude_cli.run(build_prompt(keyword, city, area, slug, schools),
-                              allowed_tools=TOOLS, max_turns=120, timeout=2400)
+                              allowed_tools=TOOLS, max_turns=120, timeout=2400,
+                              model=config.env("WRITE_MODEL") or None)
     with open(os.path.join(folder, "run.json"), "w", encoding="utf-8") as fh:
         json.dump({k: envelope.get(k) for k in ("result", "num_turns", "duration_ms", "total_cost_usd", "session_id")},
                   fh, indent=2)
@@ -41,4 +43,4 @@ def write_blog(keyword, city, area, slug, schools):
         raise claude_cli.ClaudeError(f"no blog.md written. Claude said: {result[:300]}")
     if result.upper().startswith("FAILED"):
         raise claude_cli.ClaudeError(result[:300])
-    return blog
+    return blog, assets.process(folder)

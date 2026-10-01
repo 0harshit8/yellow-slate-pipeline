@@ -11,9 +11,11 @@ class ClaudeError(RuntimeError):
     pass
 
 
-def run(prompt, allowed_tools=None, max_turns=40, timeout=1800):
+def run(prompt, allowed_tools=None, max_turns=40, timeout=1800, model=None):
     """Run one headless session. Returns the parsed --output-format json envelope."""
     cmd = ["claude", "-p", "--output-format", "json", "--max-turns", str(max_turns)]
+    if model:
+        cmd += ["--model", model]
     if allowed_tools:
         cmd += ["--allowedTools", ",".join(allowed_tools), "--permission-mode", "acceptEdits"]
     try:
