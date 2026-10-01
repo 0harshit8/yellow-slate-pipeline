@@ -21,6 +21,7 @@ gets an Error note, so rerunning the stage retries just the failures.
 """
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -157,7 +158,9 @@ def cmd_qc(sh, args):
         with open(blog, encoding="utf-8") as fh:
             md = fh.read()
         ids = [s["CMS ID"] for s in blog_schools(schools, kw) if s["CMS ID"].strip()]
-        passed, lines = qc_stage.check_blog(md, kw, expected_ids=ids, folder=folder)
+        meta_path = os.path.join(folder, "meta.json")
+        meta = json.load(open(meta_path, encoding="utf-8")) if os.path.exists(meta_path) else {}
+        passed, lines = qc_stage.check_blog(md, kw, expected_ids=ids, folder=folder, meta=meta)
         with open(os.path.join(folder, "qc.txt"), "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + "\n")
         fails = [l for l in lines if l.startswith("FAIL")]

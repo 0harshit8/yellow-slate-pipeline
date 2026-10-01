@@ -65,3 +65,17 @@ def test_uppercase_read_more_link_fails():
     md = load().replace('link="/school/delhi/delhi-public-school-kalkaji"', 'link="/school/Delhi/DPS Kalkaji"')
     passed, lines = check_blog(md, KW)
     assert any("read_more_blogs" in l for l in fails(lines))
+
+
+def test_h1_fails_and_meta_checked():
+    passed, lines = check_blog("# Title\n\n" + load(), KW)
+    assert any("no H1" in l for l in fails(lines))
+    passed, lines = check_blog(load(), KW, meta={"title": "Best Schools in Kalkaji", "meta_title": "x", "meta_description": "d"})
+    assert any("meta title" in l for l in fails(lines))
+
+
+def test_missing_photo_is_only_a_warning():
+    md = load().replace("![Bal Bharati Public School Kalkaji](images/bbps.jpg)\n", "")
+    passed, lines = check_blog(md, KW, expected_ids=["900001", "900002"])
+    assert passed, fails(lines)
+    assert any(l.startswith("WARN") and "no school image" in l for l in lines)

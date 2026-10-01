@@ -18,7 +18,8 @@ class CMS:
 
 
 def profile_url(slug):
-    return f"{config.SITE}/school/{slug}"
+    """Slug is 'city/school-name-area', same shape as Profile URL in their schools.csv."""
+    return f"{config.SITE}/{slug.strip('/')}"
 
 
 def get_cms():

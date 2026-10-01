@@ -1,5 +1,3 @@
-# Best Schools in Kalkaji: A Parent's Guide for 2026
-
 Finding the right school is one of the bigger decisions for your family. This guide to schools in Kalkaji covers fees, admissions and what parents say.
 
 The schools covered are Delhi Public School Kalkaji and Bal Bharati Public School Kalkaji.

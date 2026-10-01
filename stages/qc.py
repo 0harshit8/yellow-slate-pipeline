@@ -39,7 +39,8 @@ def _section(text, word):
 
 
 def check_school(name, text, folder):
-    issues = []
+    """Returns (issues, warnings). Issues fail QC, warnings only go in qc.txt."""
+    issues, warnings = [], []
     btn = BTN.search(text)
     if not btn:
         issues.append("no [btn_admissions] shortcode")
@@ -59,7 +60,7 @@ def check_school(name, text, folder):
     graphs = [i for i in images if "graph" in i[1].lower() or "sentiment" in i[0].lower()]
     photos = [i for i in images if i not in graphs]
     if not photos:
-        issues.append("no school image")
+        warnings.append("no school image (allowed if none found, check notes.md)")
     if not graphs:
         issues.append("no parent review graph")
     for _, path in images:
@@ -80,27 +81,31 @@ def check_school(name, text, folder):
             issues.append("fee section has no table")
         if "source:" not in fee.lower():
             issues.append("fee table has no Source: line")
-    return issues
+    return issues, warnings
 
 
-def check_blog(md, keyword, expected_ids=None, folder=None):
-    """Returns (passed, [lines]). Each line is 'PASS ...' or 'FAIL ...'."""
+def check_blog(md, keyword, expected_ids=None, folder=None, meta=None):
+    """Returns (passed, [lines]). Lines are 'PASS ...', 'FAIL ...' or 'WARN ...' (warnings never fail)."""
     lines, kw = [], keyword.lower()
 
     def rule(ok, msg):
         lines.append(("PASS " if ok else "FAIL ") + msg)
 
-    title = re.search(r"^#\s+(.+)$", md, re.M)
-    rule(bool(title) and kw in title.group(1).lower(), "keyword in H1 title")
-    body = md[title.end():] if title else md
-    first_para = next((p.strip() for p in re.split(r"\n\s*\n", body) if p.strip() and not p.strip().startswith(("#", "[", "!"))), "")
+    # Their spec: no heading above the intro. The title lives in meta.json.
+    rule(not re.search(r"^#\s", md, re.M), "no H1 in the blog body")
+    if meta is not None:
+        rule(kw in str(meta.get("title", "")).lower() and kw in str(meta.get("meta_title", "")).lower(),
+             "keyword in title and meta title")
+        rule(bool(str(meta.get("meta_description", "")).strip()), "meta description present")
+    first_para = next((p.strip() for p in re.split(r"\n\s*\n", md) if p.strip() and not p.strip().startswith(("#", "[", "!"))), "")
     rule(kw in first_para.lower(), "keyword in first paragraph")
 
     blocks = _school_blocks(md)
     rule(len(blocks) >= 1, f"{len(blocks)} school sections found")
     for name, text in blocks:
-        issues = check_school(name, text, folder)
+        issues, warnings = check_school(name, text, folder)
         rule(not issues, f"school: {name}" + (f" -> {'; '.join(issues)}" if issues else ""))
+        lines.extend(f"WARN school: {name} -> {w}" for w in warnings)
 
     if expected_ids is not None:
         found = {i for i in BTN.findall(md) if i.strip()}
@@ -120,5 +125,5 @@ def check_blog(md, keyword, expected_ids=None, folder=None):
     naked = re.findall(r"(?<![(\"])\bhttps?://\S+", re.sub(r"\[[^\]]*\]\([^)]*\)|\[\w+[^\]]*\]", "", md))
     rule(not naked, "no naked URLs" + (f" -> {naked[:3]}" if naked else ""))
 
-    passed = all(l.startswith("PASS") for l in lines)
+    passed = not any(l.startswith("FAIL") for l in lines)
     return passed, lines
