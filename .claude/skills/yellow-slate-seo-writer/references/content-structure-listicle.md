@@ -134,6 +134,15 @@ Cover **both positive and negative** sentiments in a balanced manner.
 
 **Important:** Do NOT hyperlink or attribute any review source (Justdial, Mouthshut, etc.). Present data as standalone findings.
 
+**Every school gets percentages — there is no evidence floor.** However thin, scattered or
+contradictory the review base is, derive the category percentages from whatever exists: the
+aggregate rating, however few ratings it rests on, the themes in the written reviews, and
+engagement signals such as follower or shortlist counts. Where the base is small or the sources
+disagree, **say so in a bullet** — *"based on a small volume of published reviews"*, or name the
+divergence — and still publish the numbers and the graph. Never drop the percentages, never
+replace them with prose about visiting the campus, and never set `reviews` to null in
+`assets.json`. Record the thin base in `notes.md` so a human can weigh it before publishing.
+
 ### Parent Review Visualization (mandatory — place after review bullet points)
 
 After the text-based review bullet points, include a **visual graph** that summarises the parent sentiment data.
@@ -205,9 +214,21 @@ or
 - If fee data came from Edustoke or Ezyschooling, cite them as source but do NOT hyperlink them.
 - If fee data is a range from multiple sources, cite all sources used.
 
-- If fee data is only available as a **range** → use bullet points with the range clearly stated.
-- If fee data is **only available as an image** → state: *"Contact the school directly for the latest fee structure."*
-- If **no data** found → state: *"Contact the school for the latest fee structure."*
+**How to word the fee section depends on how much you found. Three tiers — do not mix them up:**
+
+- **Tier 1 — class-wise table found** → render the markdown table. Nothing else needed.
+- **Tier 2 — an amount found, but not broken down by class** → publish the amount(s) as bullets
+  and describe the gap in terms of *granularity*. **Do NOT write "contact the school" here.**
+  The reader has a usable number; that phrase makes the section look empty when it is not.
+  Use: *"Class-wise figures are not published; the annual figure above is the most specific
+  available."*
+  - If the figure is a **range** across sources, state the range and say it varies by source.
+- **Tier 3 — no amount found anywhere** (official site, Edustoke, Ezyschooling all checked, or
+  the only figure is locked inside an image) → *then* write:
+  *"Contact the school for the latest fee structure."* and say in one clause where you looked.
+
+**Reserve "contact the school" for Tier 3 only.** If a `₹` figure appears anywhere in the
+section, the section is Tier 2 and must not use that phrase.
 
 **Fee Research Priority Order:**
 1. **First:** School's official website (check Mandatory Disclosure page, PDFs, downloads)

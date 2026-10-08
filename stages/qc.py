@@ -13,6 +13,8 @@ IMG = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)")
 READ_MORE = re.compile(r'\[read_more_blogs\s+link="([^"]*)"')
 BAD_LINK = re.compile(r"\]\([^)]*(edustoke|ezyschooling)[^)]*\)", re.I)
 BULLET = re.compile(r"^[ \t]*[-*][ \t]+(.*)$", re.M)
+# A fee amount in any form the writer uses. The three-tier fee rule turns on whether one is present.
+FEE_AMOUNT = re.compile(r"(?:₹|Rs\.?\s*)\d")
 
 
 def _school_blocks(md):
@@ -36,6 +38,15 @@ def _section(text, word):
         return None
     nxt = re.search(r"^#{2,4}\s", text[m.end():], re.M)
     return text[m.end(): m.end() + nxt.start()] if nxt else text[m.end():]
+
+
+def word_count(md):
+    """Prose words a reader sees: shortcodes, image lines and comments don't count."""
+    body = re.sub(r"<!--.*?-->", "", md, flags=re.S)
+    body = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", body)
+    body = re.sub(r"\[(?:btn_admissions|read_more_blogs)[^\]]*\]", "", body)
+    body = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", body)  # keep link text, drop the URL
+    return len(re.findall(r"[A-Za-z0-9][A-Za-z0-9'’.-]*", body))
 
 
 def check_school(name, text, folder):
@@ -77,7 +88,9 @@ def check_school(name, text, folder):
     if fee is None:
         issues.append("no Fee Structure section")
     elif "contact the school" not in fee.lower():
-        if "|" not in fee:
+        # Tier 2 is an amount with no class-wise breakdown published, and is allowed to be prose
+        # rather than a table. Only a section with no table and no amount at all is a real miss.
+        if "|" not in fee and not FEE_AMOUNT.search(fee):
             issues.append("fee section has no table")
         if "source:" not in fee.lower():
             issues.append("fee table has no Source: line")
@@ -117,6 +130,16 @@ def check_blog(md, keyword, expected_ids=None, folder=None, meta=None):
     faq = re.search(r"^#{2,4}\s+.*(faq|frequently asked).*$", md, re.I | re.M)
     n_faq = len(re.findall(r"^(#{2,4}\s+|\*\*|Q[:.]).*\?\**\s*$", md[faq.end():], re.M)) if faq else 0
     rule(n_faq >= 5, f"{n_faq} FAQs, need 5+")
+
+    # The writer used to shell out to Measure-Object to check its own length. It has
+    # no shell now, so the budget is checked here instead. Every blog so far lands
+    # around 1.4x the skill's formula, so warn above 1.5x and only fail a runaway.
+    words = word_count(md)
+    budget = 300 * len(blocks) + 900
+    ratio = words / budget if budget else 0
+    rule(ratio <= 2, f"{words:,} words, {ratio:.2f}x the ~{budget:,} word budget")
+    if 1.5 < ratio <= 2:
+        lines.append(f"WARN length: {ratio:.2f}x budget, trim toward 250-300 words per school")
 
     bad = BAD_LINK.findall(md)
     rule(not bad, "no Edustoke/Ezyschooling hyperlinks")

@@ -65,10 +65,51 @@ Search in this priority order:
 **Do NOT hyperlink Edustoke or Ezyschooling in the final blog.**
 
 ### 2.3 Admission Process
-School's official website first, then secondary sources.
+Search in this priority order:
+1. School's official website (Admissions page, notices, downloadable forms)
+2. Ezyschooling / Edustoke admission tabs
+3. The school's own social media for the current cycle's dates
 
-### 2.4 Key Facts
-Year established, curriculum, grades offered, affiliations, campus highlights.
+If only *last* season's window is documented, say so explicitly ("the usual cycle runs …")
+rather than presenting an old date as current.
+
+### 2.4 Key Facts — one source order per field
+
+Every field below has a named source order. **Work the list before leaving a cell blank.**
+Most "unknown" cells in past blogs were answerable from sources already listed here.
+
+**Board / Curriculum / Affiliation**
+1. **CBSE SARAS** — the authoritative registry (`saras.cbse.gov.in`, ~33k affiliated schools).
+   With an affiliation number, the per-school page is a direct lookup:
+   `saras.cbse.gov.in/saras/AffiliatedList/AfflicationDetails/<affiliation no>`.
+   Delhi affiliation numbers are typically 7 digits starting `273`.
+2. School's own website (look for an affiliation number in the footer or Mandatory Disclosure)
+3. Ezyschooling, iCBSE, uniapply, Justdial listings
+- **Absence from SARAS is itself evidence** the school is not CBSE — likely State Board. Say
+  which board, and if the sources conflict, say they conflict. Do not leave it blank.
+
+**Grades offered · Year established · Location · Medium · Co-ed status · Facilities**
+1. **UDISE school record**, reachable via `schools.org.in` school pages. These are
+   Government-of-India UDISE data rendered as prose and they carry, for most recognised
+   schools: year established, management type, urban/rural, district and block, **grade range**,
+   co-ed status, medium of instruction, and a detailed **facilities** paragraph — building type,
+   classroom count, boundary wall, electricity, drinking water, boys/girls toilets, playground,
+   library and book count, computers, ramps.
+2. School's official website (About / Infrastructure pages) — best for *marketing* facilities
+   (labs, sports, transport) that UDISE does not record
+3. Ezyschooling / Edustoke / Justdial listings
+
+**Two hard rules when using `schools.org.in`:**
+- **Find the page via web search, not the site's own search.** Its `?s=` search is broken — it
+  returns unrelated schools from other states. A valid school page URL contains an 11-digit
+  UDISE code: `schools.org.in/<district>/<udise code>/<slug>.html`.
+- **Verify school name *and* locality before using the page.** Searches do return the wrong
+  school (a search for "B.A.V. Public School Shahdara" returned *Samrat Public School*). If the
+  name or area does not match, discard it — a wrong-school fact is far worse than a blank cell.
+
+**Corroboration rule:** two independent sources agreeing is enough to publish a fact. One
+source is enough for objective registry data (UDISE, SARAS). If sources conflict, publish the
+most authoritative and note the conflict in `notes.md`.
 
 ### 2.5 School URL & ID Lookup
 Load `references/schools.csv` and search for each school name:
@@ -193,9 +234,27 @@ If graph generation isn't possible, provide the data table as fallback.
 4. **Fee tables:** Multi-column with headers when class-wise data available. Always markdown — never images. Always include a source line below the fee table indicating where the data was sourced from (e.g., "Source: [School Name] Official Website — Mandatory Disclosure Page" or "Source: Edustoke.com"). Do NOT hyperlink Edustoke or Ezyschooling.
 5. **Bullets:** Exactly 3 per school introduction. First bullet always starts with hyperlinked school name.
 6. **Shortcodes:** `[btn_admissions id="XXX"]` immediately after H2, where XXX is the `slate id` from schools.csv. If no slate id found for a school, leave id="" and flag it. Other shortcodes only if IDs provided.
-7. **No fictional data.** If data missing, include heading + "Contact the school for the latest details."
+7. **No fictional data — but "unknown" is a last resort, not a first move.** Before writing any
+   fallback, work the field's source order in Step 2.4. Then:
+   - **Objective field** (board, grades, year established, location, medium, co-ed) → it is almost
+     always on record. Exhaust SARAS and the UDISE record first. Only if genuinely absent, write
+     the specific gap: *"Board affiliation is not listed on CBSE SARAS or the school's website."*
+     Naming where you looked is more useful to a parent than "contact the school".
+   - **Subjective field** (facilities, campus highlights) → if neither UDISE nor the official site
+     documents it, **omit the row entirely** rather than filling it with a fallback sentence. A
+     missing row reads as "not applicable"; a row full of "contact the school" reads as neglect.
+     This clause covers info-table rows only. It never applies to the parent review percentages,
+     which are always published — see rule 9.
+   - Only use *"Contact the school for the latest details."* where a parent genuinely must ask the
+     school directly — current-cycle admission dates, seat vacancies, and Tier 3 fees.
+   - **Never** let a cell say "contact the school" for a fact a public registry holds.
 8. **LLM Summary Line:** Plain text only. No formatting. Between info table and Parent Review H3.
-9. **Parent review graph:** Pastel horizontal bar chart after review bullets. Consistent across all schools.
+9. **Parent review graph:** Pastel horizontal bar chart after review bullets. Consistent across all
+   schools. **Mandatory for every school, with no evidence floor.** However thin or contradictory
+   the review base, derive percentages from what exists (aggregate rating, the few written reviews,
+   follower and shortlist counts), state the thin base in a bullet, and publish both the numbers and
+   the graph. Never omit them, never substitute prose about visiting the campus, and never write
+   `"reviews": null` in `assets.json`. Flag the weak evidence in `notes.md` instead.
 
 ---
 
