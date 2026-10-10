@@ -42,12 +42,25 @@ A failed row keeps its status and gets an Error note, so rerunning a stage retri
 
 ## CMS
 
-`CMS_MODE=fake` uses `data/fake_cms.json`. `CMS_MODE=api` needs `clients/cms_api.py`,
-written once Yellow Slate shares the API docs.
+`CMS_MODE=fake` uses `data/fake_cms.json`. `CMS_MODE=api` talks to their live CMS through
+`clients/cms_api.py`. `BLOG_MODE=api` also pushes unpublished drafts; `off` means you paste
+`blog.docx` in by hand. Run `python verify_ys_api.py` before a batch to check their API.
 
-Rules: name = school + area (board only for 2 campuses in one area, no short forms),
-email = name letters only + `@gmail.com`, verified = No, claimed = No. Search always runs
-before create, so reruns never duplicate. Every created school is logged in `data/cms_created.log`.
+Rules: name = the plain school name, no area (their API appends the area to the slug itself),
+no short forms. Verified = No, claimed = No. Search always runs before create, so reruns
+never duplicate. Every created school is logged in `data/cms_created.log`.
+
+**Area is per school, not per keyword.** Their API demands a name, a city and an area on
+every lookup, with no city-wide search, and an area named after its own city is a real but
+empty area that matches nothing. So a city keyword like "best schools in Lucknow" has no
+single area to use: the pick stage reads each school's locality off the competitor pages,
+`stages/area.py` checks it against their CMS, and the CMS stage files each school under its
+own locality. A school whose area cannot be resolved is dropped from the blog with a note,
+and the blog stops if that leaves fewer than 8. The Area column in the Schools tab is
+editable, so filling it by hand overrides everything.
+
+`python preflight_keywords.py keywords.csv` checks a whole keyword list's cities and areas
+up front.
 
 ## Tests
 

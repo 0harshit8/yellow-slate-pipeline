@@ -8,10 +8,13 @@ import time
 import config
 from clients import claude_cli
 from clients.cms_base import profile_url
-from stages import assets, docx_export
+from stages import assets, docx_export, qc
 
 # No shell: images and graphs are done by stages/assets.py after the run.
-TOOLS = ["Skill", "WebSearch", "WebFetch", "Read", "Write", "Edit", "Glob", "Grep"]
+# Agent spawns the school-researcher subagents (.claude/agents/school-researcher.md), which keep
+# each school's search results out of this run's context. The writer keeps WebSearch only for the
+# one or two site:yellowslate.com internal-link lookups it still does itself.
+TOOLS = ["Skill", "Agent", "WebSearch", "WebFetch", "Read", "Write", "Edit", "Glob", "Grep"]
 
 
 def out_dir(slug):
@@ -19,13 +22,20 @@ def out_dir(slug):
 
 
 def build_prompt(keyword, city, area, slug, schools):
-    """schools: [{"name", "id", "slug"}] in blog order."""
+    """schools: [{"name", "id", "slug", "area"}] in blog order.
+
+    Each school carries its OWN locality, which for a city keyword is not the keyword's area.
+    The researcher verifies a page against the school's name and locality, so handing it
+    "Lucknow" for a school in Gomti Nagar would let the wrong school's fees through.
+    """
     lines = "\n".join(
-        f"     {i}. {s['name']} | CMS ID: {s['id']} | Profile URL: {profile_url(s['slug'])}"
+        f"     {i}. {s['name']} | Locality: {s.get('area') or area} | CMS ID: {s['id']}"
+        f" | Profile URL: {profile_url(s['slug'])}"
         for i, s in enumerate(schools, 1)
     )
     return config.read_prompt("write_wrapper.md").format(
-        keyword=keyword, city=city, area=area, slug=slug, schools=lines, out_dir=out_dir(slug).replace("\\", "/"))
+        keyword=keyword, city=city, area=area, slug=slug, schools=lines,
+        budget=f"{qc.word_budget(len(schools)):,}", out_dir=out_dir(slug).replace("\\", "/"))
 
 
 def clear_previous(folder):
@@ -45,6 +55,8 @@ def write_blog(keyword, city, area, slug, schools):
     folder = os.path.join(config.ROOT, out_dir(slug))
     clear_previous(folder)
     os.makedirs(folder, exist_ok=True)
+    # WRITE_MODEL is the writer only. The school-researcher subagents keep their own model
+    # (opus, set in their definition), which takes precedence over inheriting this one.
     envelope = claude_cli.run(build_prompt(keyword, city, area, slug, schools),
                               allowed_tools=TOOLS, max_turns=120, timeout=2400,
                               model=config.env("WRITE_MODEL") or None)

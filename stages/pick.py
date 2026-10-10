@@ -33,4 +33,4 @@ def candidates(keyword, city=""):
     answer = claude_cli.run_json(prompt, max_turns=2, timeout=600)
 
     per_page = {p.get("url", f"page{i}"): p.get("schools", []) for i, p in enumerate(answer.get("pages", []))}
-    return merge(per_page)[:SHORTLIST], len(pages)
+    return merge(per_page, city)[:SHORTLIST], len(pages)

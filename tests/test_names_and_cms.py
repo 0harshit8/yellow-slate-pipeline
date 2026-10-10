@@ -12,14 +12,38 @@ def test_normalize_expands_short_forms_once():
     assert normalize("DAV Public School") == "dav public school"
 
 
-def test_cms_name_rule():
-    assert cms_name("DPS", "Kalkaji") == "Delhi Public School Kalkaji"
-    assert cms_name("Bal Bharati Public School Kalkaji", "Kalkaji") == "Bal Bharati Public School Kalkaji"
-    assert cms_name("The British School", "Chanakyapuri") == "The British School Chanakyapuri"
+def test_cms_name_is_the_plain_name_without_the_area():
+    """Their API appends the area to the slug, and their existing rows carry plain names."""
+    assert cms_name("DPS", "Kalkaji") == "Delhi Public School"
+    assert cms_name("Bal Bharati Public School Kalkaji", "Kalkaji") == "Bal Bharati Public School"
+    assert cms_name("The British School", "Chanakyapuri") == "The British School"
+    assert cms_name("Kidzee Kalkaji", "Kalkaji") == "Kidzee"
 
 
-def test_email():
-    assert school_email("Delhi Public School Kalkaji") == "delhipublicschoolkalkaji@gmail.com"
+def test_cms_name_never_returns_empty():
+    """A school named only after its area must not be stripped to nothing."""
+    assert cms_name("Kalkaji", "Kalkaji") == "Kalkaji"
+
+
+def test_email_follows_their_domain():
+    assert school_email("Example School", "Delhi", "Kalkaji") == \
+        "delhi-example-school-kalkaji@schools.yellowslate.com"
+
+
+def test_email_is_unique_per_area():
+    """Same school name, two areas, two different mailboxes."""
+    assert school_email("Deepalaya School", "Delhi", "Kalkaji") != \
+        school_email("Deepalaya School", "Delhi", "Sarita Vihar")
+
+
+def test_email_stays_inside_the_64_character_local_part():
+    long_name = "Government Senior Secondary Special School Co-Ed For The Hearing Impaired"
+    email = school_email(long_name, "Delhi", "Kalkaji")
+    local = email.split("@")[0]
+    assert len(local) <= 64, local
+    assert email.endswith("@schools.yellowslate.com")
+    # a different long name must not collide once both are truncated
+    assert school_email(long_name + " Number Two", "Delhi", "Kalkaji") != email
 
 
 def test_merge_counts_pages_not_mentions():
@@ -46,7 +70,8 @@ def test_create_then_rerun_reuses(cms):
     again = ensure_school(cms, "Delhi Public School", "Delhi", "Kalkaji")
     assert first["created"] and not again["created"]
     assert first["id"] == again["id"]
-    assert first["slug"] == "delhi/delhi-public-school-kalkaji-kalkaji"
+    # plain name in, so the area appears once in the slug, not twice
+    assert first["slug"] == "delhi/delhi-public-school-kalkaji"
     assert len(cms.schools) == 1
     assert cms.schools[0]["verified"] is False and cms.schools[0]["claimed"] is False
 

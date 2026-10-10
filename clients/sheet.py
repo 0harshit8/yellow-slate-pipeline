@@ -30,12 +30,12 @@ WEEKLY = "Weekly review"
 ARCHIVE = "Schools archive"
 
 BLOG_HEADERS = ["Keyword", "City", "Area", "Slug", "Status", "Error", "Live link", "Minutes", "Updated"]
-CMS_HEADERS = ["Keyword", "School", "CMS name", "CMS ID", "CMS slug", "Created by us"]
+CMS_HEADERS = ["Keyword", "School", "CMS name", "CMS ID", "CMS slug", "Created by us", "Area"]
 ARCHIVE_HEADERS = ["Keyword", "School", "Count", "Vol", "Approved"]
 STATUSES = ["new", "picked", "approved", "cms_done", "written", "qc_pass", "qc_fail", "published"]
 
 # Schools queue columns. E (blog) and F (row kind) are hidden bookkeeping.
-QUEUE_HEADERS = ["School", "Count", "Vol", "✓", "Blog", "Kind"]
+QUEUE_HEADERS = ["School", "Count", "Vol", "✓", "Blog", "Kind", "Area"]
 MAX_SCHOOLS = 15
 
 
@@ -161,12 +161,17 @@ YELLOW = {"red": 1.0, "green": 0.93, "blue": 0.6}
 
 
 def read_queue(ws):
-    """[{"keyword", "schools": [{"name", "count", "volume", "approved", "row"}]}] in sheet order."""
+    """[{"keyword", "schools": [{"name", "count", "volume", "approved", "area", "row"}]}].
+
+    "area" is the school's own locality, not the keyword's. It is what the CMS stage files
+    the school under, and it is editable in the sheet so a wrong one can be corrected by
+    hand before approving.
+    """
     values = ws.get_all_values()
     blocks, by_kw = [], {}
     for i, row in enumerate(values[1:], start=2):
         row = row + [""] * (len(QUEUE_HEADERS) - len(row))
-        name, count, vol, tick, kw, kind = (c.strip() for c in row[:6])
+        name, count, vol, tick, kw, kind, area = (c.strip() for c in row[:7])
         if not kw:
             continue
         if kw.lower() not in by_kw:
@@ -175,7 +180,7 @@ def read_queue(ws):
         if kind == "school" and name:
             by_kw[kw.lower()]["schools"].append({
                 "name": name, "count": count, "volume": vol,
-                "approved": tick.upper() == "TRUE", "row": i})
+                "approved": tick.upper() == "TRUE", "area": area, "row": i})
     return blocks
 
 
@@ -196,12 +201,13 @@ def render_queue(ws, blocks):
         headers.append(len(rows))
         kw = b["keyword"].replace('"', '""')
         ticked = f'=COUNTIFS(E:E,"{kw}",F:F,"school",D:D,TRUE)&" of 8-12 ticked"'
-        rows.append([b["keyword"], ticked, "", "", b["keyword"], "blog"])
+        rows.append([b["keyword"], ticked, "", "", b["keyword"], "blog", ""])
         start = len(rows)
         for s in b["schools"]:
-            rows.append([s["name"], s["count"], s["volume"], bool(s["approved"]), b["keyword"], "school"])
+            rows.append([s["name"], s["count"], s["volume"], bool(s["approved"]),
+                         b["keyword"], "school", s.get("area", "")])
         schools.append((start, len(rows)))
-        rows.append(["", "", "", "", "", ""])
+        rows.append(["", "", "", "", "", "", ""])
 
     need = max(len(rows) + 50, 200)
     sid = ws.id
@@ -211,13 +217,13 @@ def render_queue(ws, blocks):
     ws.spreadsheet.batch_update({"requests": requests})
     if ws.row_count < need:
         ws.add_rows(need - ws.row_count)
-    ws.update(values=rows, range_name=f"A1:F{len(rows)}", value_input_option="USER_ENTERED")
+    ws.update(values=rows, range_name=f"A1:G{len(rows)}", value_input_option="USER_ENTERED")
 
-    def rng(r0, r1, c0=0, c1=4):
+    def rng(r0, r1, c0=0, c1=7):
         return {"sheetId": sid, "startRowIndex": r0, "endRowIndex": r1, "startColumnIndex": c0, "endColumnIndex": c1}
 
     requests = [
-        {"repeatCell": {"range": rng(0, 1, 0, 6), "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+        {"repeatCell": {"range": rng(0, 1, 0, 7), "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
                         "fields": "userEnteredFormat.textFormat.bold"}},
         {"updateSheetProperties": {"properties": {"sheetId": sid, "gridProperties": {"frozenRowCount": 1}},
                                    "fields": "gridProperties.frozenRowCount"}},
@@ -225,6 +231,8 @@ def render_queue(ws, blocks):
                                        "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
         {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
                                        "properties": {"pixelSize": 380}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": 6, "endIndex": 7},
+                                       "properties": {"pixelSize": 180}, "fields": "pixelSize"}},
     ]
     for h in headers:
         requests.append({"repeatCell": {"range": rng(h, h + 1),
@@ -240,7 +248,8 @@ def write_pick(ws, keyword, shortlist):
     """Add (or replace) one blog's block at the bottom of the queue."""
     blocks = [b for b in read_queue(ws) if b["keyword"].lower() != keyword.lower()]
     blocks.append({"keyword": keyword, "schools": [
-        {"name": s["name"], "count": s["count"], "volume": "", "approved": False}
+        {"name": s["name"], "count": s["count"], "volume": "", "approved": False,
+         "area": s.get("area", "")}
         for s in shortlist[:MAX_SCHOOLS]]})
     render_queue(ws, blocks)
 

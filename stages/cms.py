@@ -13,12 +13,18 @@ from stages.names import cms_name, school_email
 
 
 def ensure_school(cms, school, city, area):
-    """Returns {"id", "name", "slug", "created": bool}."""
-    name = cms_name(school, area)
-    found = cms.search_school(name, city, area)
+    """Returns {"id", "name", "slug", "created": bool}, plus "score" and "review" on a match.
+
+    Searches on the name as the competitor page wrote it, not the trimmed one. Their matching
+    ignores an area inside the name, and clients/cms_api.py walks its own ladder of shorter
+    names, so the fuller string gives the search more to work with and never matches less.
+    Creates under cms_name(), which is the plain name their CMS expects.
+    """
+    found = cms.search_school(school, city, area)
     if found:
         return {**found, "created": False}
-    new = cms.create_school(name, city, area, school_email(name))
+    name = cms_name(school, area)
+    new = cms.create_school(name, city, area, school_email(name, city, area))
     _log(new, city, area)
     return {**new, "created": True}
 

@@ -32,7 +32,14 @@ def env(name, default=None):
 GCP_KEY = env("GCP_KEY", r"C:\Users\Harshit\.aios\gcp-sheets-key.json")
 SHEET_ID = env("SHEET_ID", "")
 CMS_MODE = env("CMS_MODE", "fake")  # fake | api
+BLOG_MODE = env("BLOG_MODE", "off")  # off | api. off = publish by hand.
 SITE = "https://yellowslate.com"
+
+# Yellow Slate pipeline API, handed over Oct 10, 2026. One base URL and one bearer key
+# cover all five endpoints: /health, /schools/search, /schools, /media, /blogs.
+# The key is a live production credential, so it belongs in .env, which is gitignored.
+YS_API_BASE = env("YS_API_BASE", "https://cmsadmin.yellowslate.com/api/pipeline")
+YS_API_KEY = env("YS_API_KEY", "")
 
 
 def read_prompt(name):

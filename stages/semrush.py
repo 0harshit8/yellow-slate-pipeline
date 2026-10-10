@@ -8,9 +8,15 @@ import csv
 import glob
 import io
 import os
+import re
 import zipfile
 
-from clients.dataforseo import clean
+
+def clean(keyword):
+    """Normalize an export keyword for matching: lowercase, no punctuation, 10 words / 80 chars."""
+    k = re.sub(r"[^a-z0-9 ]", " ", keyword.lower())
+    words = k.split()[:10]
+    return " ".join(words)[:80].strip()
 
 
 def _rows(path):

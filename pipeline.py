@@ -41,6 +41,7 @@ from clients import sheet
 from clients.claude_cli import ClaudeError
 from clients.cms_base import CMSError, get_cms
 from clients.tavily import TavilyError
+from stages import area as area_stage
 from stages import cms as cms_stage
 from stages import pick as pick_stage
 from stages import qc as qc_stage
@@ -50,6 +51,10 @@ from stages.selection import new_keywords, parse_selection, parse_vols, suggest_
 from stages.semrush import semrush_volumes
 
 SEMRUSH_DIR = os.path.join(config.DATA_DIR, "semrush")
+
+# How many schools a published listicle needs. The CMS stage drops a school whose area it
+# cannot resolve, so a blog can fall below the minimum after ticking and has to stop.
+MIN_SCHOOLS, MAX_SCHOOLS = 8, 12
 
 def area_from_keyword(keyword):
     m = re.search(r"\bin\s+(.+)$", keyword, re.I)
@@ -195,29 +200,54 @@ def cmd_cms(sh, args):
         if not city or not area:
             sheet.set_blog(blogs_ws, b["_row"], error="cms: City and Area must be filled")
             continue
-        if not 8 <= len(picked) <= 12:
-            sheet.set_blog(blogs_ws, b["_row"], error=f"cms: {len(picked)} schools ticked, need 8-12")
+        if not MIN_SCHOOLS <= len(picked) <= MAX_SCHOOLS:
+            sheet.set_blog(blogs_ws, b["_row"], error=f"cms: {len(picked)} schools ticked, need {MIN_SCHOOLS}-{MAX_SCHOOLS}")
             print(f"cms: {kw}: {len(picked)} ticked, skipped")
             continue
         print(f"cms: {kw}")
         have = {r["School"].strip().lower() for r in cms_rows(done, kw) if r["CMS ID"].strip()}
-        new_rows, failed = [], None
+        new_rows, failed, skipped = [], None, []
         for s in picked:
             if s["name"].lower() in have:
                 continue  # done on an earlier run
+            # The area is the school's own locality, never the keyword's. A city keyword like
+            # "best schools in Lucknow" has no single area, and area=city is an empty area in
+            # their CMS, so using it would create a duplicate of every school. See stages/area.py.
+            school_area, note = area_stage.resolve(s["name"], city, s.get("area", ""), blog_area=area)
+            if not school_area:
+                skipped.append(f"{s['name']} ({note})")
+                print(f"  skipped {s['name']}: {note}")
+                continue
             try:
-                res = cms_stage.ensure_school(cms, s["name"], city, area)
+                res = cms_stage.ensure_school(cms, s["name"], city, school_area)
             except CMSError as err:
                 failed = err
                 break
-            new_rows.append([kw, s["name"], res["name"], res["id"], res["slug"], "y" if res["created"] else "n"])
-            print(f"  {'created' if res['created'] else 'exists '} {res['id']} {res['name']}")
+            except Exception as err:
+                # A CMS client that doesn't wrap its own errors must not kill the whole batch.
+                failed = f"{type(err).__name__}: {err}"
+                break
+            new_rows.append([kw, s["name"], res["name"], res["id"], res["slug"],
+                             "y" if res["created"] else "n", school_area])
+            print(f"  {'created' if res['created'] else 'exists '} {res['id']} {res['name']} [{school_area}]")
         if new_rows:
             sheet.append(cms_ws, new_rows)  # keep what succeeded, even if a later school failed
         if failed:
             sheet.set_blog(blogs_ws, b["_row"], error=f"cms: {failed}")
             print(f"  error: {failed}")
             continue
+        # A skipped school is dropped from the blog, so the post can fall under the 8 it needs.
+        resolved = len([s for s in picked if s["name"].lower() in have]) + len(new_rows)
+        if resolved < MIN_SCHOOLS:
+            why = f"cms: only {resolved} of {len(picked)} schools have a usable area. " \
+                  f"Fill the Area column for: {'; '.join(skipped)}"
+            sheet.set_blog(blogs_ws, b["_row"], error=why[:450])
+            print(f"  error: {why}")
+            continue
+        if skipped:
+            sheet.set_blog(blogs_ws, b["_row"], error=f"cms: dropped {len(skipped)} "
+                                                      f"without an area: {'; '.join(skipped)}"[:450])
+            print(f"  {len(skipped)} dropped, {resolved} schools kept")
         sheet.set_blog(blogs_ws, b["_row"], status="cms_done")
         sheet.archive_block(sh, kw)
 
@@ -227,7 +257,8 @@ def cmd_write(sh, args):
     done = sheet.records(sh.worksheet(sheet.CMS))
     for b in rows_in(sheet.records(blogs_ws), "cms_done", args):
         kw = b["Keyword"].strip()
-        picked = [{"name": r["CMS name"], "id": r["CMS ID"], "slug": r["CMS slug"]} for r in cms_rows(done, kw)]
+        picked = [{"name": r["CMS name"], "id": r["CMS ID"], "slug": r["CMS slug"],
+                   "area": r.get("Area", "")} for r in cms_rows(done, kw)]
         print(f"write: {kw} ({len(picked)} schools). This takes a while...")
         try:
             path, problems = write_stage.write_blog(kw, b["City"], b["Area"], b["Slug"] or blog_slug(kw, b["City"]), picked)
@@ -292,7 +323,10 @@ def cmd_show(sh, args):
         for i, s in enumerate(block["schools"], 1):
             vol = f"  vol {s['volume']}" if s["volume"] else ""
             tick = "  [ticked]" if s["approved"] else ""
-            print(f"  {i:>2}. {s['name']}  count {s['count']}{vol}{tick}")
+            # A blank area is not fatal here: the cms stage looks it up. It is shown because
+            # typing it into the sheet's Area column is faster and surer than the lookup.
+            where = f"  {s['area']}" if s.get("area") else "  [no area]"
+            print(f"  {i:>2}. {s['name']}  count {s['count']}{vol}{where}{tick}")
 
 
 def _one_block(sh, args, cmd):
@@ -335,10 +369,18 @@ def cmd_suggest(sh, args):
             print(f"\n{b['Keyword']}: {err}")
             continue
         print(f"\n{b['Keyword']}: {len(nums)} chosen")
+        blank = []
         for n in nums:
             s = block["schools"][n - 1]
-            print(f"  {n:>2}. {s['name']}  vol {s['volume']}{'  (top-up)' if n in topup else ''}")
+            where = s.get("area") or ""
+            if not where:
+                blank.append(n)
+            print(f"  {n:>2}. {s['name']}  vol {s['volume']}"
+                  f"  {where or '[no area]'}{'  (top-up)' if n in topup else ''}")
         print(f"  selection: {','.join(map(str, sorted(nums)))}")
+        if blank:
+            print(f"  {len(blank)} with no area ({', '.join(map(str, blank))}). The cms stage will "
+                  f"look them up, or fill the Area column in the Schools tab to be sure.")
 
 
 def cmd_approve(sh, args):

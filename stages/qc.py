@@ -40,6 +40,13 @@ def _section(text, word):
     return text[m.end(): m.end() + nxt.start()] if nxt else text[m.end():]
 
 
+def word_budget(n_schools):
+    """The skill's length formula, in one place. stages/write.py puts this number in the
+    prompt and the length check below gates on it, so the writer's target and QC's gate
+    can't drift apart."""
+    return 300 * n_schools + 900
+
+
 def word_count(md):
     """Prose words a reader sees: shortcodes, image lines and comments don't count."""
     body = re.sub(r"<!--.*?-->", "", md, flags=re.S)
@@ -131,14 +138,16 @@ def check_blog(md, keyword, expected_ids=None, folder=None, meta=None):
     n_faq = len(re.findall(r"^(#{2,4}\s+|\*\*|Q[:.]).*\?\**\s*$", md[faq.end():], re.M)) if faq else 0
     rule(n_faq >= 5, f"{n_faq} FAQs, need 5+")
 
-    # The writer used to shell out to Measure-Object to check its own length. It has
-    # no shell now, so the budget is checked here instead. Every blog so far lands
-    # around 1.4x the skill's formula, so warn above 1.5x and only fail a runaway.
+    # The writer used to shell out to Measure-Object to check its own length. It has no
+    # shell now, so the budget is checked here instead. The prompt now carries the same
+    # number (stages/write.py), so this gates on a target the writer was actually given.
+    # The seven blogs written before the budget was in the prompt ran 1.36-1.65x, so 1.5x
+    # fails and 1.25x warns. Tighten both once runs that had the number show what it holds.
     words = word_count(md)
-    budget = 300 * len(blocks) + 900
+    budget = word_budget(len(blocks))
     ratio = words / budget if budget else 0
-    rule(ratio <= 2, f"{words:,} words, {ratio:.2f}x the ~{budget:,} word budget")
-    if 1.5 < ratio <= 2:
+    rule(ratio <= 1.5, f"{words:,} words, {ratio:.2f}x the ~{budget:,} word budget")
+    if 1.25 < ratio <= 1.5:
         lines.append(f"WARN length: {ratio:.2f}x budget, trim toward 250-300 words per school")
 
     bad = BAD_LINK.findall(md)
