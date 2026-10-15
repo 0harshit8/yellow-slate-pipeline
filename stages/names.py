@@ -87,11 +87,13 @@ def merge(names_per_page, city=""):
     The area is the locality the pages put the school in. Pages that state different
     localities are describing different schools, so a group only ever holds one locality,
     plus any entries that named none. Empty stays empty rather than being guessed:
-    stages/area.py decides what to do with a school whose locality is unknown.
+    stages/area.py decides what to do with a school whose locality is unknown. An area that
+    is just the city's name counts as none - see _locality() for what that cost.
     """
     seen = [(url, *_name_and_area(entry), _reviews(entry))
             for url, entries in names_per_page.items() for entry in entries]
-    seen = [(url, raw, area, reviews) for url, raw, area, reviews in seen if raw]
+    seen = [(url, raw, _locality(area, city), reviews)
+            for url, raw, area, reviews in seen if raw]
 
     # Pages write the same school as "La Martiniere College, Hazratganj" and
     # "La Martiniere College, Lucknow". Those are one school, and the locality in the name is
@@ -142,6 +144,32 @@ def _same_place(area, group_area):
     if not area or not group_area:
         return True
     return area.strip().lower() == group_area.strip().lower()
+
+
+def _locality(area, city):
+    """The area, unless it is only the city's name, which means the page gave no locality.
+
+    prompts/pick_extract.md tells the extractor to fall back to the city when a page states
+    no locality at all, so area = city carries no more than an empty string does - and an
+    empty string is what the rest of this module already reads as unknown.
+
+    Keeping it did two kinds of damage. _same_place() read it as a locality that clashes with
+    the school's real one and split one school into two rows: measured on Kolar, Oct 15 2026,
+    Gnana Jyothi School came back twice, once as Mulbagal with 119 ratings and once as Kolar
+    with none, which cost a shortlist slot and left a twin with no review signal that could
+    be picked instead of the real row. Anything that survived was then filed under the area
+    named after its own city, which is their CMS catch-all and holds no schools.
+
+    is_city_area() in stages/area.py states the same rule where the area is resolved. It is
+    repeated here rather than imported because this module stays free of imports that can
+    reach the network, which is what makes it cheap to test.
+
+    Only the city merge() was told about counts. A caller that named none gets the area as the
+    page wrote it, since deciding which of two place names is a city would need their CMS.
+    """
+    if city and area.strip().lower() == city.strip().lower():
+        return ""
+    return area
 
 
 def _name_and_area(entry):

@@ -232,3 +232,59 @@ def test_merge_still_ranks_unrated_schools_by_consensus():
 def test_merge_ignores_a_review_count_that_is_not_a_number():
     out = merge({"a": [{"name": "A School", "area": "", "reviews": "lots"}]})
     assert out[0]["reviews"] == 0
+
+
+# ---- the city is not a locality, so it must not split a school in two ------------------------
+
+def test_merge_folds_a_city_as_area_entry_into_the_real_locality():
+    """The bug the live Kolar pick showed on Oct 15, 2026:
+
+        119 ratings  area=Mulbagal  Gnana Jyothi School
+          0 ratings  area=Kolar     Gnana Jyothi School
+
+    One school, two rows. prompts/pick_extract.md tells the extractor to fall back to the
+    city name when a page gives no locality at all, so area = city means "unknown", exactly
+    like the empty string _same_place already lets through. Treating it as a locality that
+    clashes with Mulbagal cost a shortlist slot and left a twin with no review signal that
+    could be picked instead of the real row.
+    """
+    out = merge({
+        "justdial": [{"name": "Gnana Jyothi School", "area": "Mulbagal", "reviews": 119}],
+        "listicle": [{"name": "Gnana Jyothi School", "area": "Kolar"}],
+    }, city="Kolar")
+    assert len(out) == 1, "area = city means unknown, so it must not split the school"
+    assert out[0]["area"] == "Mulbagal", "the real locality wins over the city fallback"
+    assert out[0]["reviews"] == 119
+    assert out[0]["count"] == 2
+
+
+def test_merge_never_records_the_city_as_the_area():
+    """With no page naming a locality, the area stays unknown rather than becoming the city.
+
+    An area named after its own city is their CMS catch-all and holds no schools - see
+    is_city_area() in stages/area.py. Recording it here would hand the cms stage a locality
+    that every search misses, which is how the duplicate bug started.
+    """
+    out = merge({"a": [{"name": "Jyothi English Medium School", "area": "Kolar"}]}, city="Kolar")
+    assert out[0]["area"] == "", "an unknown locality stays empty for stages/area.py to resolve"
+
+
+def test_merge_still_keeps_two_localities_apart_when_a_city_is_given():
+    out = merge({
+        "a": [{"name": "Sandeepani Public School", "area": "Bangarapet"}],
+        "b": [{"name": "Sandeepani Public School", "area": "Mulbagal"}],
+    }, city="Kolar")
+    assert len(out) == 2, "two stated localities are still two different schools"
+
+
+def test_merge_treats_the_city_as_a_locality_when_no_city_was_given():
+    """The rule fires on the city merge() was told about, nothing else.
+
+    "Kolar" is a locality in its own right to a caller that named no city, and guessing which
+    of two names is a city would need their CMS, which this module deliberately cannot reach.
+    """
+    out = merge({
+        "a": [{"name": "Some School", "area": "Kolar"}],
+        "b": [{"name": "Some School", "area": "Mulbagal"}],
+    })
+    assert len(out) == 2
