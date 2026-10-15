@@ -255,6 +255,11 @@ If graph generation isn't possible, provide the data table as fallback.
    follower and shortlist counts), state the thin base in a bullet, and publish both the numbers and
    the graph. Never omit them, never substitute prose about visiting the campus, and never write
    `"reviews": null` in `assets.json`. Flag the weak evidence in `notes.md` instead.
+   **But never publish zeros.** No evidence floor means derive from a thin base, not invent one
+   from an empty base. A `[0, 0]` category draws an empty bar and an all-zero school draws a
+   blank chart. Omit a category with no signal; if the fact sheet says `REVIEWS: NOT_FOUND`,
+   omit that school's `reviews` key and graph and list it under `## Swap these schools` in
+   `notes.md` to be replaced by a better-documented school.
 
 ---
 

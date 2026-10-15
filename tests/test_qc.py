@@ -129,3 +129,48 @@ def test_a_class_number_is_not_a_school_count():
     passed, lines = check_blog(load(), KW, meta=meta_with(
         "Compare Class 10 schools in Kalkaji on fees, admission and parent reviews."))
     assert passed, fails(lines)
+
+
+# ---- a researched gap is allowed to be stated; an unresearched one is not -------------------
+
+def test_a_fee_section_that_only_says_contact_the_school_fails():
+    """The old gate read the phrase as a licence: `elif "contact the school" not in fee.lower()`
+    skipped every fee check when it was present, so 28 of 79 published school sections carry
+    no fee information and QC passed all of them. Kalka Public School Kalkaji shipped that way
+    while SchoolsUniverse, Careers360 and Uniapply each published a figure for it.
+    """
+    md = load().replace(
+        "The published annual fee is about Rs. 95,000 for the 2026-27 session. "
+        "Class-wise figures are not published.\n\nSource: Careers360",
+        "Contact the school for the latest details.")
+    passed, lines = check_blog(md, KW)
+    assert not passed
+    assert any("fee section has no amount" in l for l in fails(lines))
+
+
+def test_an_admission_section_that_only_says_contact_the_school_fails():
+    md = load().replace("- Apply at the school office.",
+                        "Contact the school for the latest details.")
+    passed, lines = check_blog(md, KW)
+    assert not passed
+    assert any("admission section has no process" in l for l in fails(lines))
+
+
+def test_an_admission_section_may_say_contact_the_school_about_the_dates():
+    """The narrow licence stays: current-cycle dates and seat vacancies genuinely are not
+    published ahead of time. What is not allowed is a section made only of that sentence."""
+    md = load().replace(
+        "- Apply at the school office.",
+        "- Registration opens online in December and closes in January.\n"
+        "- Shortlisted families are called for an interaction.\n"
+        "- Contact the school for the latest details on this year's exact dates.")
+    passed, lines = check_blog(md, KW)
+    assert passed, fails(lines)
+
+
+def test_a_review_section_with_no_percentages_fails():
+    """Five published schools carry a Parent Review heading with no numbers under it."""
+    md = load().replace("- 75% positive on sports", "- Parents speak well of the school.")
+    passed, lines = check_blog(md, KW)
+    assert not passed
+    assert any("review section has no percentages" in l for l in fails(lines))

@@ -68,9 +68,26 @@ def draw_graph(name, reviews, dest):
 
 
 def valid_reviews(reviews):
+    """Shaped right AND carrying at least one non-zero number.
+
+    An all-zero set is not thin data, it is no data: the Kolar run published nine schools at
+    0/0 across every category and the chart script drew nine titled, axis-labelled, empty
+    frames. QC passed them, because it only asks whether a graph image exists. A school with
+    no review signal at all belongs out of the blog, not in it behind a blank chart.
+    """
+    return bool(_shaped(reviews) and any(x for v in reviews.values() for x in v))
+
+
+def _shaped(reviews):
     return isinstance(reviews, dict) and reviews and all(
         isinstance(v, (list, tuple)) and len(v) == 2 and all(isinstance(x, (int, float)) for x in v)
         for v in reviews.values())
+
+
+def all_zero_reviews(reviews):
+    """Shaped like review data but every number is 0 — told apart from malformed data so
+    notes.md can say which of the two happened."""
+    return bool(_shaped(reviews) and not any(x for v in reviews.values() for x in v))
 
 
 def process(folder):
@@ -108,6 +125,9 @@ def process(folder):
                 replacement = f"![Parent sentiment breakdown for {name}](graphs/{slug}.png)"
             except ValueError as err:
                 problems.append(f"{name}: graph failed ({err})")
+        elif all_zero_reviews(s.get("reviews")):
+            problems.append(f"{name}: every category is 0, so there is no review signal and no "
+                            f"graph. Replace this school or publish it without a graph.")
         else:
             problems.append(f"{name}: no category review percentages, no graph")
         md = md.replace(graph_tag, replacement)

@@ -38,3 +38,31 @@ def test_docx_export(tmp_path):
     text = "\n".join(p.text for p in d.paragraphs)
     assert "Meta title: M" in text and '[btn_admissions id="1"]' in text and "A School is great." in text
     assert len(d.tables) == 1 and d.tables[0].cell(1, 1).text == "CBSE"
+
+
+def test_all_zero_reviews_draw_no_graph(tmp_path):
+    """The Kolar run published nine schools with every category at 0/0, which the old
+    valid_reviews() accepted because it only type-checked. The chart script drew a titled,
+    axis-labelled, completely empty frame and QC passed it, because QC only asks whether a
+    graph image exists. Zero is the absence of a measurement, not a measurement of zero.
+    """
+    (tmp_path / "blog.md").write_text("<!-- GRAPH: a -->\n")
+    (tmp_path / "assets.json").write_text(json.dumps({"schools": [
+        {"name": "A", "slug": "a", "image_url": None,
+         "reviews": {"Academics": [0, 0], "Infrastructure": [0, 0]}}]}))
+    problems = assets.process(str(tmp_path))
+    assert not os.path.exists(tmp_path / "graphs" / "a.png")
+    assert any("every category is 0" in p for p in problems)
+    assert "<!--" not in (tmp_path / "blog.md").read_text()
+
+
+def test_one_zero_category_still_draws_a_graph(tmp_path):
+    """Only an entirely empty set is rejected. A single category with no signal sits beside
+    real ones all the time, and dropping the whole graph for it would lose real data."""
+    (tmp_path / "blog.md").write_text("<!-- GRAPH: a -->\n")
+    (tmp_path / "assets.json").write_text(json.dumps({"schools": [
+        {"name": "A", "slug": "a", "image_url": None,
+         "reviews": {"Academics": [82, 11], "Fee Satisfaction": [0, 0]}}]}))
+    problems = assets.process(str(tmp_path))
+    assert os.path.exists(tmp_path / "graphs" / "a.png")
+    assert not any("every category is 0" in p for p in problems)

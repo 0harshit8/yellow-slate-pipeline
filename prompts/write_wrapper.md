@@ -50,6 +50,13 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
      details." is correct. Same for current-cycle admission dates and seat vacancies.
    - `CONFLICTS` with two values -> publish the registry value and note the conflict in notes.md.
    - `VERIFIED_VIA: NONE` -> flag that school prominently in notes.md. Its facts are unconfirmed.
+   - `REVIEWS: NOT_FOUND` -> **leave that school's `reviews` out of assets.json entirely.**
+     Never write `[0, 0]`, and never write a category you have no number for. Zero is not a
+     thin measurement, it is no measurement, and the pipeline draws it as an empty graph.
+   - `NO_EVIDENCE: YES` -> the school has neither fees nor reviews on record. Write its
+     section from what the registry does give, and list it under a `## Swap these schools`
+     heading at the top of notes.md with what the researcher tried. A human replaces it with
+     a better-documented school rather than publishing a section with two holes in it.
 
    Never add a fact no fact sheet contains. You did not do this research and cannot check it.
 
@@ -70,11 +77,19 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
    - Don't add a markdown fallback table for the graph. The graph replaces it.
    - Write `{out_dir}/assets.json`:
      `{{"schools": [{{"name": "<school name>", "slug": "<school-slug>", "image_url": "<direct URL of a campus photo on the school's official website, or null>", "reviews": {{"<Category>": [<positive %>, <negative %>], "...": [0, 0]}}}}]}}`
-     The review percentages must match the percentages in the blog text exactly. **`reviews` is never null.**
-     Every school gets category percentages and a graph, no matter how thin or contradictory the
-     review base is — derive them from whatever exists (aggregate rating, a handful of written
-     reviews, follower and shortlist counts) and say in the review bullets that the base is small.
-     A thin base is a caveat to state, never a reason to omit the percentages or the graph.
+     The review percentages must match the percentages in the blog text exactly.
+     Every school whose fact sheet carries any review signal gets category percentages and a
+     graph, no matter how thin or contradictory the base — derive them from whatever exists
+     (aggregate rating, a handful of written reviews, follower and shortlist counts) and say in
+     the review bullets that the base is small. A thin base is a caveat to state, never a reason
+     to omit the percentages or the graph.
+     **The one exception is a fact sheet that says `REVIEWS: NOT_FOUND`.** Then omit that
+     school's `reviews` key and its `<!-- GRAPH: -->` placeholder, write in the review bullets
+     that no parent reviews are published for this school yet, and list it under
+     `## Swap these schools` in notes.md. Never fill the gap with zeros: a `[0, 0]` category is
+     published as an empty bar, and a school whose every category is 0 produced a titled,
+     axis-labelled, blank graph nine times in the Kolar blog. Omit a category you have no
+     number for rather than zeroing it.
 7. **Save into the folder `{out_dir}`** (relative to the current directory):
    - `{out_dir}/blog.md`. No H1 title in the file: it starts with the introduction paragraph, as the skill says.
    - `{out_dir}/meta.json` with keys `title`, `meta_title`, `meta_description`, `slug` (use the slug given above; primary keyword in title and meta_title).

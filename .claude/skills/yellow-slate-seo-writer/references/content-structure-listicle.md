@@ -143,6 +143,15 @@ divergence — and still publish the numbers and the graph. Never drop the perce
 replace them with prose about visiting the campus, and never set `reviews` to null in
 `assets.json`. Record the thin base in `notes.md` so a human can weigh it before publishing.
 
+**No evidence floor is not a licence to publish zeros.** A thin base is a few ratings you can
+derive from; *no* base is nothing to derive from, and the two are not the same. Never write a
+category as `[0, 0]` and never write a school whose every category is `0`: the chart script
+draws it as a titled, axis-labelled, empty frame, which is worse on the page than no chart.
+Omit a category with no signal. If the fact sheet says `REVIEWS: NOT_FOUND`, omit the school's
+`reviews` key and its graph, say in the bullets that no parent reviews are published yet, and
+list the school under `## Swap these schools` in `notes.md` so a human can replace it with a
+better-documented one.
+
 ### Parent Review Visualization (mandatory — place after review bullet points)
 
 After the text-based review bullet points, include a **visual graph** that summarises the parent sentiment data.

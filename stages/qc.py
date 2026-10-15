@@ -15,6 +15,13 @@ BAD_LINK = re.compile(r"\]\([^)]*(edustoke|ezyschooling)[^)]*\)", re.I)
 BULLET = re.compile(r"^[ \t]*[-*][ \t]+(.*)$", re.M)
 # A fee amount in any form the writer uses. The three-tier fee rule turns on whether one is present.
 FEE_AMOUNT = re.compile(r"(?:₹|Rs\.?\s*)\d")
+# A review percentage, which the Parent Review section exists to carry.
+PERCENT = re.compile(r"\d{1,3}\s?%")
+# The fallback sentence, in the shapes the writer produces. Sentences built around it are
+# subtracted before a section is judged to have said anything, so a section cannot be made
+# of it alone. Its narrow licence survives: an admission section may still use it about this
+# year's exact dates, as long as it describes the process too.
+FALLBACK = re.compile(r"[^.\n]*contact(?:ing)? the school[^.\n]*\.?", re.I)
 # A school count claimed in the title or the description: "for 10 CBSE schools", "the 9 best
 # schools", "Top 12 Schools in Kolar". Two digits at most, and never one preceded by a digit
 # or a hyphen, because "2026-27" is in every title this pipeline writes and its "27" must not
@@ -74,6 +81,22 @@ def meta_school_counts(meta):
     return [int(n) for n in META_COUNT.findall(text)]
 
 
+def _substance(section, least=8):
+    """True when the section says something of its own, not just the fallback sentence.
+
+    Twenty-three published school sections have an Admission Process heading whose whole body
+    is "Contact the school for the latest details." The heading was all the old rule asked for.
+
+    The word floor applies only to a section that uses the fallback, so this catches a section
+    made of it without also policing a brief real one: "Apply online by 31 January" is short
+    and complete, and nothing is gained by failing it.
+    """
+    words = lambda s: len(re.findall(r"[A-Za-z0-9][A-Za-z0-9'’.-]*", re.sub(r"[-*|#\s]+", " ", s)))
+    if not FALLBACK.search(section):
+        return words(section) > 0
+    return words(FALLBACK.sub("", section)) >= least
+
+
 def check_school(name, text, folder):
     """Returns (issues, warnings). Issues fail QC, warnings only go in qc.txt."""
     issues, warnings = [], []
@@ -105,20 +128,27 @@ def check_school(name, text, folder):
         elif folder and not os.path.exists(os.path.join(folder, path)):
             issues.append(f"image file missing: {path}")
 
-    if _section(text, "review") is None:
+    review = _section(text, "review")
+    if review is None:
         issues.append("no Parent Review section")
-    if _section(text, "admission") is None:
+    elif not PERCENT.search(review):
+        issues.append("review section has no percentages")
+
+    admission = _section(text, "admission")
+    if admission is None:
         issues.append("no Admission Process section")
+    elif not _substance(admission):
+        issues.append("admission section has no process, only the contact-the-school line")
+
     fee = _section(text, "fee")
     if fee is None:
         issues.append("no Fee Structure section")
-    elif "contact the school" not in fee.lower():
-        # Tier 2 is an amount with no class-wise breakdown published, and is allowed to be prose
-        # rather than a table. Only a section with no table and no amount at all is a real miss.
-        if "|" not in fee and not FEE_AMOUNT.search(fee):
-            issues.append("fee section has no table")
-        if "source:" not in fee.lower():
-            issues.append("fee table has no Source: line")
+    # Tier 2 is an amount with no class-wise breakdown published, and is allowed to be prose
+    # rather than a table. Only a section with no table and no amount at all is a real miss.
+    elif "|" not in fee and not FEE_AMOUNT.search(fee):
+        issues.append("fee section has no amount")
+    elif "source:" not in fee.lower():
+        issues.append("fee table has no Source: line")
     return issues, warnings
 
 
