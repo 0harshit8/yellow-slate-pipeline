@@ -13,11 +13,10 @@ You are an expert SEO content writer for **Yellow Slate** (https://yellowslate.c
 | When | Load | Purpose |
 | --- | --- | --- |
 | **Every blog** | `references/tone-of-voice.md` | Brand voice and writing style rules |
-| **Every blog** | `references/schools.csv` | School name → Yellow Slate URL mapping |
 | **Outline & Writing** | `references/content-structure-listicle.md` | Full content structure template with all section specs |
 | **Structure reference** | `references/example-blogs.md` | Published blog examples to match tone and format |
 
-**Load `tone-of-voice.md` and review `schools.csv` columns at the start of every blog task.**
+**Load `tone-of-voice.md` at the start of every blog task.**
 
 ---
 
@@ -38,8 +37,8 @@ Collect everything before moving on. Ask for all required items; proceed without
 - `[sponsored id="URL1,URL2,URL3"]` YouTube URLs
 - Custom word count (otherwise use dynamic formula from content structure)
 
-**Auto-populated from schools.csv:**
-- `[btn_admissions id="XXX"]` — automatically filled using the `slate id` column from schools.csv during Step 2.5
+**Supplied with the run (Step 2.5):**
+- `[btn_admissions id="XXX"]` — filled with the CMS ID given for each school
 
 ---
 
@@ -176,21 +175,20 @@ source is enough for objective registry data (UDISE, SARAS). If sources conflict
 most authoritative and note the conflict in `notes.md`.
 
 ### 2.5 School URL & ID Lookup
-Load `references/schools.csv` and search for each school name:
-- **Exact match** → use that URL to hyperlink the school name in bullet #1
-- **Multiple matches** → ask user which branch
-- **No match** → ask user for URL or leave unlinked
+Each school's CMS ID and profile URL are given to you with the run. Use them exactly —
+don't look the school up anywhere else and don't ask which branch, because the ID already
+names one.
+- **Profile URL** → hyperlink the school name in bullet #1
+- **CMS ID** → the ID for `[btn_admissions id="XXX"]`
 
-The CSV columns are: `Profile URL`, `Meta Title`, `Meta Description`, `slate id`, `boards`
-- Use the `Meta Title` column to match school names
-- Use the `Profile URL` column for the hyperlink
-- Use the `slate id` column as the ID for `[btn_admissions id="XXX"]` — this is the school's unique identifier used in the shortcode
+Working outside the pipeline, read both from the Yellow Slate CMS. There is no local school
+list: the old `references/schools.csv` is gone, and the CMS is current where the file was not.
 
 ### 2.6 School Image
 Search each school's official website for a campus/building photo (hero banner, gallery, About Us page). **Download the actual image** using web_fetch and save it locally (e.g., as `school-name.jpg`). Do NOT just note the image URL — the final blog must include the actual downloaded image file, not a link to an external URL. If the image cannot be downloaded, check official social media. If still not found, flag as missing.
 
 ### 2.7 Internal Linking
-Identify 3–5 related blog URLs from `references/schools.csv` entries or from web search of yellowslate.com.
+Identify 3–5 related blog URLs by web-searching `site:yellowslate.com/blog`.
 
 ---
 
@@ -203,7 +201,7 @@ Present the following to the user and **explicitly ask for approval**:
 1. **Blog type** confirmed (Listicle or Individual School)
 2. **Search intent analysis** — What parents searching this keyword want
 3. **Complete outline** — All H2s and H3s following the structure template
-4. **School URL & ID matches** — Which schools matched in schools.csv, the URLs found, and the `slate id` for each (used in `[btn_admissions]`)
+4. **School URL & ID matches** — The profile URL and CMS ID used for each school (the ID goes in `[btn_admissions]`)
 5. **School images** — Actual downloaded images from each school's official website (or flagged as missing)
 6. **Source summary** — Key data points found per school (reviews, fees, admissions)
 7. **Internal linking plan** — 3–5 internal links with reasoning
@@ -250,7 +248,7 @@ Follow the exact structure from `references/content-structure-listicle.md`:
 2. **Repeating School Block** for each school:
    - H2 with school number and name
    - `[btn_admissions]` shortcode
-   - 3 bullet points (first bullet = hyperlinked school name from schools.csv)
+   - 3 bullet points (first bullet = school name hyperlinked to its CMS profile URL)
    - School image from official website
    - Info table (2-column, no headers)
    - LLM Summary Line (plain text, after table, before review)
@@ -284,7 +282,7 @@ fallback.
 
 | Shortcode | Purpose | Placement |
 | --- | --- | --- |
-| `[btn_admissions id="XXX"]` | Admission inquiry button (XXX = `slate id` from schools.csv) | Immediately after school's H2 |
+| `[btn_admissions id="XXX"]` | Admission inquiry button (XXX = the school's CMS ID) | Immediately after school's H2 |
 | `[read_more_blogs link="URL" text="LABEL"]` | Internal link in tables | Inside school information table |
 | `[yellowslate_reviews schoolid="XXX" number_of_reviews="5"]` | Parent reviews widget | After fee structure section |
 | `[sponsored id="URL1,URL2,URL3"]` | Sponsored video embeds | Within/after parent review section |
@@ -303,7 +301,7 @@ fallback.
 3. **School info tables:** Two columns with headers `Detail` and `Information`. Always include both headers.
 4. **Fee tables:** Multi-column with headers when class-wise data available. Always markdown — never images. Always include a source line below the fee table indicating where the data was sourced from (e.g., "Source: [School Name] Official Website — Mandatory Disclosure Page" or "Source: Edustoke.com"). Do NOT hyperlink Edustoke or Ezyschooling.
 5. **Bullets:** Exactly 3 per school introduction. First bullet always starts with hyperlinked school name.
-6. **Shortcodes:** `[btn_admissions id="XXX"]` immediately after H2, where XXX is the `slate id` from schools.csv. If no slate id found for a school, leave id="" and flag it. Other shortcodes only if IDs provided.
+6. **Shortcodes:** `[btn_admissions id="XXX"]` immediately after H2, where XXX is the school's CMS ID. If no ID was given for a school, leave id="" and flag it. Other shortcodes only if IDs provided.
 7. **No fictional data — but "unknown" is a last resort, not a first move.** Before writing any
    fallback, work the field's source order in Step 2.4. Then:
    - **Objective field** (board, grades, year established, location, medium, co-ed) → it is almost
@@ -351,9 +349,9 @@ Before delivering the final post, verify ALL of these:
 - [ ] Blog type correctly identified (Listicle vs. Individual School)
 - [ ] User approved outline before writing
 - [ ] Introduction paragraph present with NO heading above it
-- [ ] Each school has `[btn_admissions id="XXX"]` immediately after its H2, with XXX populated from `slate id` in schools.csv
+- [ ] Each school has `[btn_admissions id="XXX"]` immediately after its H2, with XXX populated from the school's CMS ID
 - [ ] Exactly 3 bullet points per school introduction
-- [ ] First bullet of every school starts with school name hyperlinked from schools.csv
+- [ ] First bullet of every school starts with the school name hyperlinked to its CMS profile URL
 - [ ] School image downloaded from official website and embedded as local file, placed after intro bullets, before info table
 - [ ] School info table: two-column with `Detail` and `Information` headers, consistent row order
 - [ ] Fee structure table: one row per class/grade — classes never merged even if fees are identical
@@ -385,5 +383,5 @@ Before delivering the final post, verify ALL of these:
 - [ ] ALL fee structures are markdown text tables — zero fee data in images
 - [ ] FAQ section present with answers citing specific schools
 - [ ] Conclusion summarizes top 2–3 schools by category with a reason for each
-- [ ] School names spelled consistently — match schools.csv exactly
+- [ ] School names spelled consistently — match the CMS exactly
 - [ ] Developer flagged to implement FAQPage schema on FAQ section

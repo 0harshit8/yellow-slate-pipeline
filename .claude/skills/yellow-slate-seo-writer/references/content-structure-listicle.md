@@ -37,11 +37,11 @@ Repeat this exact structure for **every school** in the same order every time:
 [btn_admissions id="XXX"]
 ```
 
-*(Place shortcode immediately after H2, on its own line. Replace XXX with the `slate id` from `references/schools.csv` for this school. If no slate id is found, leave id="" and flag it in the outline.)*
+*(Place shortcode immediately after H2, on its own line. Replace XXX with the CMS ID given for this school. If no ID was given, leave id="" and flag it in the outline.)*
 
 ### School Introduction — Exactly 3 Bullet Points
 
-- **Bullet 1** must start with the school's full name, hyperlinked to its Yellow Slate URL from `references/schools.csv`.
+- **Bullet 1** must start with the school's full name, hyperlinked to the CMS profile URL given for it.
 - Pick the **3 most important facts**: establishment year, key differentiators, affiliations/awards, campus size, unique programs, student-teacher ratio, notable facts.
 - Keep each bullet to 1–2 sentences.
 - **No heading** before the bullets.
@@ -110,7 +110,7 @@ Write a 2–3 sentence plain-text paragraph that consolidates the most searchabl
 > "[School Full Name] is a [curriculum] school in [area/locality], [City], offering classes from [grade range]. Annual fees range from ₹[low] to ₹[high]. [1 notable differentiator — e.g., 'It is one of the few IB boarding schools in Hyderabad' or 'It has maintained an 83% positive parent sentiment based on Yellow Slate's research.']"
 
 **Rules:**
-- Use the school's full official name exactly as it appears in schools.csv.
+- Use the school's full official name exactly as the CMS spells it.
 - Must include: curriculum, area/locality, city, grade range, fee range, and one differentiator.
 - Plain text only — no bold, no hyperlinks, no bullet points.
 - Only use facts sourced during Step 2 research — never fabricate.
