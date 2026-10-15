@@ -3,29 +3,18 @@
 These guard the bug that made this module necessary: a city keyword resolved to area = city,
 which is a real but empty area in their CMS, so every search missed and the CMS stage created
 a duplicate of a school that already existed under its real locality.
+
+Since their Oct 11, 2026 update the module is a fallback, not a gate - their search reports
+each school's own area - so what is left to test here is the text handling, the city-area
+rule, and the precedence between a page, a keyword and a web lookup. The rule that an area
+their CMS did not already know must be refused is GONE: they create missing areas now, and
+refusing one only dropped schools for no reason.
 """
 
 import pytest
 
 from stages import area as area_stage
 from stages.names import merge
-
-
-@pytest.fixture(autouse=True)
-def no_cache():
-    area_stage._known.clear()
-    yield
-    area_stage._known.clear()
-
-
-@pytest.fixture
-def cms_knows(monkeypatch):
-    """Pretend their CMS knows this set of (city, area) pairs, and nothing else."""
-    def install(pairs):
-        allowed = {(c.lower(), a.lower()) for c, a in pairs}
-        monkeypatch.setattr(area_stage, "known",
-                            lambda city, area: (city.strip().lower(), area.strip().lower()) in allowed)
-    return install
 
 
 @pytest.fixture
@@ -52,17 +41,16 @@ def test_clean_keeps_only_the_locality(raw, want):
 
 # ---- the city-named area ------------------------------------------------------------------
 
-def test_an_area_named_after_its_city_is_refused(cms_knows, no_lookup):
-    """area = city passes their 404 check but holds no schools, so it must never be used."""
-    cms_knows([("Lucknow", "Lucknow"), ("Lucknow", "Gomti Nagar")])
+def test_an_area_named_after_its_city_is_refused(no_lookup):
+    """area = city is their catch-all and holds no schools, so it must never be used."""
     assert area_stage.is_city_area("Lucknow", "lucknow")
+    assert not area_stage.usable("Lucknow", "Lucknow")
     got, note = area_stage.resolve("Some School", "Lucknow", "Lucknow", blog_area="Lucknow")
     assert got == "", note
 
 
-def test_a_city_keyword_still_resolves_from_the_page(cms_knows, no_lookup):
+def test_a_city_keyword_still_resolves_from_the_page(no_lookup):
     """'best schools in Lucknow' has no area of its own. The page supplies each school's."""
-    cms_knows([("Lucknow", "Gomti Nagar")])
     got, note = area_stage.resolve("DPS", "Lucknow", "Gomti Nagar", blog_area="Lucknow")
     assert got == "Gomti Nagar"
     assert "pages" in note
@@ -70,54 +58,72 @@ def test_a_city_keyword_still_resolves_from_the_page(cms_knows, no_lookup):
 
 # ---- precedence ---------------------------------------------------------------------------
 
-def test_the_page_beats_the_keyword(cms_knows, no_lookup):
+def test_the_page_beats_the_keyword(no_lookup):
     """A listicle for one area lists schools just outside it. Those keep their own locality."""
-    cms_knows([("Delhi", "Kalkaji"), ("Delhi", "Saket")])
     got, _ = area_stage.resolve("A School", "Delhi", "Saket", blog_area="Kalkaji")
     assert got == "Saket"
 
 
-def test_the_keyword_area_is_the_fallback(cms_knows, no_lookup):
+def test_the_keyword_area_is_the_fallback(no_lookup):
     """An area keyword with nothing on the page still works the way it always did."""
-    cms_knows([("Delhi", "Kalkaji")])
     got, note = area_stage.resolve("A School", "Delhi", "", blog_area="Kalkaji")
     assert got == "Kalkaji"
     assert "keyword" in note
 
 
-def test_an_area_their_cms_does_not_know_is_not_used(cms_knows, no_lookup):
-    cms_knows([("Delhi", "Kalkaji")])
+def test_a_locality_their_cms_has_not_seen_is_now_used(no_lookup):
+    """The old code refused this and the school was dropped. They create the area now."""
     got, note = area_stage.resolve("A School", "Delhi", "Zzqxville", blog_area="")
-    assert got == ""
-    assert "Zzqxville" in note
+    assert got == "Zzqxville"
+    assert "pages" in note
 
 
-def test_an_unknown_page_locality_does_not_fall_back_to_the_keyword(cms_knows, no_lookup):
+def test_an_unknown_page_locality_does_not_fall_back_to_the_keyword(no_lookup):
     """The page naming a locality is evidence the school is not in the keyword's area.
 
-    Filing it under Kalkaji because Kalkaji happens to be a known area would put a school
-    the page placed somewhere else into the wrong part of a live CMS.
+    Filing it under Kalkaji because the keyword said so would put a school the page placed
+    somewhere else into the wrong part of a live CMS.
     """
-    cms_knows([("Delhi", "Kalkaji")])
-    got, note = area_stage.resolve("A School", "Delhi", "Greater Kailash II", blog_area="Kalkaji")
-    assert got == ""
-    assert "Greater Kailash II" in note
+    got, _ = area_stage.resolve("A School", "Delhi", "Greater Kailash II", blog_area="Kalkaji")
+    assert got == "Greater Kailash II"
 
 
-def test_the_lookup_is_the_last_resort(cms_knows, monkeypatch):
-    cms_knows([("Lucknow", "Gomti Nagar")])
+def test_the_lookup_is_the_last_resort(monkeypatch):
     monkeypatch.setattr(area_stage, "lookup_area", lambda school, city: "Gomti Nagar")
     got, note = area_stage.resolve("DPS", "Lucknow", "", blog_area="Lucknow")
     assert got == "Gomti Nagar"
     assert "lookup" in note
 
 
-def test_a_lookup_answer_their_cms_rejects_is_still_refused(cms_knows, monkeypatch):
-    cms_knows([("Lucknow", "Gomti Nagar")])
-    monkeypatch.setattr(area_stage, "lookup_area", lambda school, city: "Nowhere Colony")
+def test_nothing_anywhere_is_unresolved(no_lookup):
     got, note = area_stage.resolve("DPS", "Lucknow", "", blog_area="Lucknow")
     assert got == ""
-    assert "Nowhere Colony" in note
+    assert "no area" in note
+
+
+# ---- among: the candidates their CMS offered for a shared name -----------------------------
+
+def test_among_restricts_the_answer_to_their_candidate_areas(no_lookup):
+    """Their candidate list is every place a school of that name exists.
+
+    An answer outside it would create a duplicate instead of matching one of those rows, so
+    a page locality that is not among them is not good enough to act on.
+    """
+    got, note = area_stage.resolve("Kidzee", "Delhi", "Saket", among=["Dwarka", "Kalkaji"])
+    assert got == ""
+    assert "Dwarka" in note and "Kalkaji" in note
+
+
+def test_among_accepts_a_page_locality_that_is_one_of_them(no_lookup):
+    got, note = area_stage.resolve("Kidzee", "Delhi", "Kalkaji, New Delhi",
+                                   among=["Dwarka", "Kalkaji"])
+    assert got == "Kalkaji"
+    assert "pages" in note
+
+
+def test_among_matches_regardless_of_case(no_lookup):
+    got, _ = area_stage.resolve("Kidzee", "Delhi", "kalkaji", among=["Kalkaji"])
+    assert got == "kalkaji"
 
 
 # ---- merge carries the locality -------------------------------------------------------------

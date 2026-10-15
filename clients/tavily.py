@@ -36,7 +36,8 @@ def _call(path, payload):
     return r.json()
 
 
-def search(query, max_results=10, exclude=None):
+def search(query, max_results=10, exclude=None, include=None):
+    """include restricts the search to those domains, for pulling a known-good source in."""
     payload = {
         "query": query,
         "max_results": max_results,
@@ -46,6 +47,8 @@ def search(query, max_results=10, exclude=None):
     }
     if exclude:
         payload["exclude_domains"] = exclude
+    if include:
+        payload["include_domains"] = include
     return _call("search", payload).get("results", [])
 
 

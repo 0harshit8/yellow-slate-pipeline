@@ -89,20 +89,20 @@ def merge(names_per_page, city=""):
     plus any entries that named none. Empty stays empty rather than being guessed:
     stages/area.py decides what to do with a school whose locality is unknown.
     """
-    seen = [(url, *_name_and_area(entry))
+    seen = [(url, *_name_and_area(entry), _reviews(entry))
             for url, entries in names_per_page.items() for entry in entries]
-    seen = [(url, raw, area) for url, raw, area in seen if raw]
+    seen = [(url, raw, area, reviews) for url, raw, area, reviews in seen if raw]
 
     # Pages write the same school as "La Martiniere College, Hazratganj" and
     # "La Martiniere College, Lucknow". Those are one school, and the locality in the name is
     # what stops them matching, so every locality any page mentioned is discounted from the
     # comparison. Two campuses in different localities still differ by their own names.
-    places = {area for _, _, area in seen if area}
+    places = {area for _, _, area, _ in seen if area}
     if city:
         places.add(city)
 
-    groups = []  # each: {"key", "variants": set, "sources": set, "area": str}
-    for url, raw, area in seen:
+    groups = []  # each: {"key", "variants": set, "sources": set, "area": str, "reviews": int}
+    for url, raw, area, reviews in seen:
         key = normalize(raw)
         for g in groups:
             if not _same_place(area, g["area"]):
@@ -110,19 +110,24 @@ def merge(names_per_page, city=""):
             if key == g["key"] or similar(key, g["key"], places) >= MERGE_THRESHOLD:
                 break
         else:
-            g = {"key": key, "variants": set(), "sources": set(), "area": ""}
+            g = {"key": key, "variants": set(), "sources": set(), "area": "", "reviews": 0}
             groups.append(g)
         g["variants"].add(raw)
         g["sources"].add(url)
         if area and not g["area"]:
             g["area"] = area
+        g["reviews"] = max(g["reviews"], reviews)
 
     out = [
-        {"name": display_name(g["variants"]), "area": g["area"],
+        {"name": display_name(g["variants"]), "area": g["area"], "reviews": g["reviews"],
          "count": len(g["sources"]), "sources": sorted(g["sources"])}
         for g in groups
     ]
-    out.sort(key=lambda s: (-s["count"], s["name"]))
+    # A school with parent ratings outranks one without, however many listicles name the
+    # latter. Directory consensus alone fills a post with schools nobody has reviewed, which
+    # leaves the parent review section and its graph with nothing real to say. Among schools
+    # that both have ratings, or both have none, the old consensus order stands.
+    out.sort(key=lambda s: (-min(s["reviews"], 1), -s["reviews"], -s["count"], s["name"]))
     return out
 
 
@@ -144,6 +149,21 @@ def _name_and_area(entry):
     if isinstance(entry, dict):
         return (entry.get("name") or "").strip(), (entry.get("area") or "").strip()
     return (entry or "").strip(), ""
+
+
+def _reviews(entry):
+    """How many parent ratings a page credits the school with. 0 when the page shows none.
+
+    Only directory pages that print a rating carry this. It is the signal that separates a
+    school parents actually talk about from one that only exists in listicles, so merge()
+    keeps the largest count any page gave and ranks on it.
+    """
+    if not isinstance(entry, dict):
+        return 0
+    try:
+        return max(0, int(entry.get("reviews") or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def display_name(variants):

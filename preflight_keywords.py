@@ -8,29 +8,29 @@ otherwise the area is read out of the keyword ("schools in Kalkaji" -> "Kalkaji"
 
 Why this exists. POST /blogs takes the KEYWORD's own city and area, and 404s when either is
 not in their CMS. So this checks the pair the blog draft itself will be created with. The
-schools inside the blog are a separate matter: each one is filed under its own locality by
-stages/area.py, so a keyword no longer stands or falls on one area.
+schools inside the blog are a separate matter: each one is filed under the locality their own
+CMS reports for it (stages/cms.py), so a keyword no longer stands or falls on one area.
 
 For a city-level keyword that pair is the city twice over ("best schools in Lucknow" ->
 city Lucknow, area Lucknow). That passes, because an area named after its own city exists in
 their CMS. It is empty of schools, which is why nothing else may use it, but it is valid
 here, and the draft needs it to be.
 
-Measured Oct 10, 2026, roughly one in five well-known areas does not resolve, and Noida was
-2 of 8. On 600 keywords that is worth knowing in two minutes rather than discovering in week 6.
+Measured Oct 10, 2026, roughly one in five well-known areas did not resolve, and Noida was
+2 of 8. Their Oct 11, 2026 update makes most of that go away: they create a missing area on
+first use, so a locality they do not have is now a note on the run and not a blocked keyword.
+There is nothing to add by hand in the CRM any more.
 
-A missing AREA stops that keyword's draft, and is not a dead end. Add it by hand in the CRM,
-then rerun this:
+What is worth reading in that list is the SPELLING. Their CMS matches an area on the exact
+string, so "Tilak Nagar" and "Tilaknagar" become two separate localities and split one area's
+schools between them. A typo used to be caught here as a missing area; now it is accepted and
+quietly creates a place.
 
-    https://crm.yellowslate.com/admin/areas
+A missing CITY is the one hard stop left. The city is a dropdown on their add-area form, so a
+city that is not already in their CMS cannot be created from here at all. Those pairs still go
+to Yellow Slate's team.
 
-The form needs the area name, the city (picked from a dropdown) and a latitude and longitude,
-so budget a minute per area to look the coordinates up.
-
-A missing CITY is the harder one. The city is a dropdown on that form, so a city that is not
-already in their CMS cannot be added from there. Those pairs still go to Yellow Slate's team.
-
-Output is that worklist, split into the two kinds.
+Output is that worklist: the cities to chase, and the new localities to proofread.
 
 One gotcha it fixes on its own: their CMS uses official city names. "Bangalore" 404s and
 "Bengaluru" works, same for Gurgaon and Gurugram. ALIASES below is retried automatically,
@@ -45,25 +45,18 @@ from collections import Counter
 
 import config
 from clients import ys_http
+from clients.cms_api import ApiCMS
+from stages import city as city_stage
 
-# Their CMS uses the official name. A keyword list written by a human will not.
-ALIASES = {
-    "bangalore": "Bengaluru",
-    "gurgaon": "Gurugram",
-    "bombay": "Mumbai",
-    "calcutta": "Kolkata",
-    "madras": "Chennai",
-    "mysore": "Mysuru",
-    "pondicherry": "Puducherry",
-    "trivandrum": "Thiruvananthapuram",
-    "baroda": "Vadodara",
-    "poona": "Pune",
-    "cochin": "Kochi",
-    "vizag": "Visakhapatnam",
-    "new delhi": "Delhi",
-}
+# The alias table that used to live here is gone, and it was wrong. It assumed their CMS uses
+# the official modern name, which it does for "Bengaluru" and "Gurugram" and does NOT for
+# "Mysore", "Vizag", "Allahabad", "Trichy" or "Calicut". Three of its thirteen entries pointed
+# at a spelling their API 404s on, so it turned two working cities into unknown ones.
+# stages/city.py asks them instead, and GROUPS there is direction-free on purpose.
 
-OK, RENAME, NO_AREA, NO_CITY, ERROR = "ok", "rename", "no area", "no city", "error"
+# NO_AREA is gone: an area their CMS does not have is created on first use, so it is a note
+# on the run and not a reason to hold a keyword back.
+OK, RENAME, NEW_AREA, NO_CITY, ERROR = "ok", "rename", "new area", "no city", "error"
 
 
 def area_from_keyword(keyword):
@@ -77,35 +70,57 @@ def area_from_keyword(keyword):
 
 
 def probe(city, area):
-    """Returns (status, message). A 200 means both the city and the area exist."""
+    """Returns (verdict, message) for one city + area pair, straight off their API.
+
+    Their Oct 11, 2026 update broke the check this used to make. It read a 200 as "their CMS
+    knows both the city and the area", which stopped being true: an unknown area now answers
+    200 with "area_matched": false and the search quietly widens to the whole city. So a
+    typo'd area passed the preflight and the batch ran on it.
+
+    Two signals replace it, both from their reply rather than from the status code:
+      - "code": UNKNOWN_CITY is the only hard stop left. A city is a dropdown on their
+        add-area form, so a city they do not have cannot be created from here.
+      - "area_matched": false means the area is new. That is no longer an error, because
+        they create missing areas, but it is worth printing: their CMS matches an area on
+        the exact string, so "Tilak Nagar" and "Tilaknagar" become two places.
+    """
     try:
-        ys_http.call("GET", "schools/search",
-                     params={"name": "x", "city": city[:100], "area": area[:100]})
-        return 200, ""
+        body = ys_http.call("GET", "schools/search",
+                            params={"name": "zzqx no such school", "city": city[:100],
+                                    "area": area[:100]})
+    except ys_http.NotInCms:
+        # no school of that name, which is the point of asking. Their 404 body carries no
+        # area_matched, so the area cannot be confirmed either way from here.
+        return NEW_AREA, "their CMS answered without placing the area"
     except ys_http.UnknownPlace as exc:
-        return 404, str(exc)
+        return NO_CITY, str(exc)
     except ys_http.YSApiError as exc:
-        return getattr(exc, "status", 0) or 0, str(exc)
+        if getattr(exc, "code", "") == "UNKNOWN_CITY":
+            return NO_CITY, str(exc)
+        return ERROR, str(exc)
+
+    matched = body.get("area_matched") if isinstance(body, dict) else None
+    if matched is False:
+        return NEW_AREA, f"{area!r} is not in their CMS yet and will be created on first use"
+    return OK, ""
 
 
-def classify(city, area):
-    """Returns (verdict, city_used, note)."""
-    status, message = probe(city, area)
-    if status == 200:
-        return OK, city, ""
+def classify(cms, city, area):
+    """Returns (verdict, city_used, note).
 
-    if status == 404:
-        alias = ALIASES.get(city.strip().lower())
-        if alias and alias.lower() != city.strip().lower():
-            alias_status, alias_message = probe(alias, area)
-            if alias_status == 200:
-                return RENAME, alias, f"use {alias!r}, not {city!r}"
-            message = alias_message or message
-        if "Unknown city" in message:
-            return NO_CITY, city, message
-        return NO_AREA, city, message
+    The city comes first, because an area check against a city their CMS does not have tells
+    you nothing. stages/city.py tries the spellings this place goes by and reports the one
+    their API answers to, which is as likely to be the old name as the new one.
+    """
+    theirs, spelling = city_stage.resolve(cms, city)
+    if not theirs:
+        return NO_CITY, city, spelling
 
-    return ERROR, city, message
+    verdict, message = probe(theirs, area)
+    if spelling:
+        note = f"{spelling}. {message}" if message else spelling
+        return RENAME, theirs, note
+    return verdict, theirs, message
 
 
 def main():
@@ -148,10 +163,12 @@ def main():
 
     print(f"{len(rows)} keywords, {len(pairs)} unique city + area pairs to check\n")
 
+    # one client for the whole run, so each city and area is asked about once and cached
+    cms = ApiCMS()
     results = []
     counts = Counter()
     for index, ((city, area), keywords) in enumerate(sorted(pairs.items()), 1):
-        verdict, city_used, note = classify(city, area)
+        verdict, city_used, note = classify(cms, city, area)
         counts[verdict] += 1
         results.append({"City": city, "Area": area, "Verdict": verdict,
                         "Use city": city_used, "Keywords": len(keywords),
@@ -161,16 +178,20 @@ def main():
         if index % 50 == 0:
             print(f"  ... {index}/{len(pairs)}", file=sys.stderr)
 
-    blocked = sum(r["Keywords"] for r in results if r["Verdict"] in (NO_AREA, NO_CITY))
+    blocked = sum(r["Keywords"] for r in results if r["Verdict"] in (NO_CITY, ERROR))
     print("\n" + "-" * 78)
-    for verdict in (OK, RENAME, NO_AREA, NO_CITY, ERROR):
+    for verdict in (OK, RENAME, NEW_AREA, NO_CITY, ERROR):
         if counts[verdict]:
-            print(f"  {verdict:<8} {counts[verdict]:>4} pairs")
+            print(f"  {verdict:<9} {counts[verdict]:>4} pairs")
     print("-" * 78)
-    print(f"  {blocked} of {len(rows)} keywords need a city or area added first "
+    print(f"  {blocked} of {len(rows)} keywords are held back by an unknown city "
           f"({100 * blocked / len(rows):.0f}%)")
     if counts[RENAME]:
         print(f"  {counts[RENAME]} pairs work under a different city name. The pipeline should use 'Use city'.")
+    if counts[NEW_AREA]:
+        print(f"  {counts[NEW_AREA]} pairs name a locality their CMS does not have yet. Not blocked, "
+              f"it is created on first use, but read them for typos: a misspelt one becomes a "
+              f"second locality and splits that area's schools.")
 
     if args.out:
         gaps = [r for r in results if r["Verdict"] != OK]
@@ -179,8 +200,8 @@ def main():
             writer.writeheader()
             writer.writerows(gaps or results)
         print(f"\n  wrote {len(gaps)} rows to {args.out}")
-        print("  'no area' rows: add them at https://crm.yellowslate.com/admin/areas")
-        print("  'no city' rows: that form cannot add a city, so these go to their team")
+        print("  'new area' rows: nothing to add by hand any more, just check the spelling")
+        print("  'no city' rows: their add-area form cannot add a city, so these go to their team")
 
     return 0
 

@@ -1,61 +1,54 @@
-"""Work out which area each school belongs to, and check that area exists in their CMS.
+"""Work out which locality a school belongs to, for the schools their CMS cannot place itself.
 
-Why this stage exists. Their API needs a name, a city AND an area on every school lookup:
-area is not optional, and there is no city-wide search (verified Oct 10, 2026 - omitting it,
-sending it empty and sending "*" are all rejected). So the area has to be known before a
-school can be searched for or created.
+This module used to run for every school, because their API needed a name, a city AND an
+area on every lookup. Since their Oct 11, 2026 update, area is optional on
+GET /schools/search: name + city finds a school outright and their reply names the area.
 
-The pipeline used to take one area per keyword, read out of the keyword text, and use it for
-every school in the blog. That works for an area keyword ("best schools in Kalkaji") and is
-wrong for a city keyword ("best schools in Lucknow"), which is most of the list. It resolved
-to area "Lucknow", and a city-named area is a real but EMPTY area in their CMS:
+So the normal path no longer comes through here at all. clients/cms_api.py searches by name
+and city and takes the area from their answer, which is the area their CMS actually holds -
+a fact, not a guess. This module is what is left: the fallback for the two cases their
+search cannot settle on its own.
 
-    Delhi Public School in "Dwarka" -> id 8231
-    Delhi Public School in "Rohini" -> id 20698
-    Delhi Public School in "Delhi"  -> nothing
+  1. A SHARED NAME. "Kidzee" matches five schools in Delhi, "Delhi Public School" more.
+     Their API returns the candidates and refuses to guess, so a locality has to come from
+     somewhere else before the search can be repeated with it.
+  2. A SCHOOL THEY DO NOT HAVE. Creating still needs an area (SCHOOL_NOT_FOUND otherwise),
+     because they will not invent a locality for a school they have never seen.
 
-So every search missed, and the CMS stage created a fresh duplicate of a school that already
-existed under its real locality. A 404 would have been safer: it stops. This did not.
+What changed in the rules, and why. The old version of this file refused any area their CMS
+did not already know, and the pipeline skipped that school. Two reasons that is now wrong:
 
-Hence: the area is a fact about the SCHOOL, not about the keyword. The pick stage now reads
-each school's locality off the competitor pages, and this module verifies it against their
-CMS before anything is created. A locality their CMS does not know is left unresolved, and
-the caller skips that school rather than filing it somewhere wrong.
+  - They create missing areas on demand, so an area they do not know is no longer a dead end.
+  - The check itself broke. It sent name="x" with the area and read a 200 as "this area
+    exists". After their update an unknown area returns 200 with "area_matched": false,
+    so the check said yes to every typo, including the ones it existed to catch.
+
+The replacement is CMS.area_exists(), which lives on the CMS client because it is a question
+about their data, and reads "area_matched" rather than the status code. It is advice now
+rather than a gate: an area they do not know is still used, and reported as new, since their
+CMS matches areas on the exact string and "Tilak Nagar" vs "Tilaknagar" would split one
+locality in two. Nothing in this module talks to their API any more - it is text handling
+plus one web lookup, so a fake-mode run cannot reach their live CMS through it.
+
+The one hard rule that stays: an area named after its own city is their catch-all and holds
+no schools, so it must never be used. That is the bug this module was written for - a city
+keyword resolved to area = city, every search missed, and the CMS stage created a duplicate
+of a school that already existed under its real locality.
 """
 
 import re
 
 import config
-from clients import claude_cli, tavily, ys_http
-
-# (city.lower(), area.lower()) -> bool. Their CMS place list does not change mid-run.
-_known = {}
+from clients import claude_cli, tavily
 
 LOOKUP_RESULTS = 5
-
-
-def known(city, area):
-    """True if their CMS knows this city + area pair. Cached, one cheap GET per new pair."""
-    city, area = (city or "").strip(), (area or "").strip()
-    if not city or not area:
-        return False
-    cache_key = (city.lower(), area.lower())
-    if cache_key in _known:
-        return _known[cache_key]
-    try:
-        ys_http.call("GET", "schools/search",
-                     params={"name": "x", "city": city[:100], "area": area[:100]})
-        _known[cache_key] = True
-    except ys_http.UnknownPlace:
-        _known[cache_key] = False
-    return _known[cache_key]
 
 
 def is_city_area(city, area):
     """An area named after its own city is their catch-all, and no school is filed under it.
 
-    It passes the known() check, so it has to be refused by name or it quietly reopens the
-    duplicate bug this module exists to close.
+    Their search answers for it happily, so it has to be refused by name or it quietly
+    reopens the duplicate bug this module exists to close.
     """
     return (city or "").strip().lower() == (area or "").strip().lower()
 
@@ -100,43 +93,57 @@ def clean(area, city=""):
 
 
 def usable(city, area):
-    """An area is usable when their CMS knows it and it is not the city's own catch-all."""
-    return bool(area) and not is_city_area(city, area) and known(city, area)
+    """A locality is usable when it is a locality at all and not the city's own catch-all.
+
+    No longer asks whether their CMS knows it. It does not have to: they create the area, and
+    exists() reports whether that is about to happen.
+    """
+    return bool(area) and not is_city_area(city, area)
 
 
-def resolve(school, city, candidate, blog_area="", lookup=True):
+def resolve(school, city, candidate, blog_area="", lookup=True, among=()):
     """Returns (area, note). An empty area means unresolved: the caller skips that school.
 
     Order:
       1. what the competitor pages said about this school
       2. the keyword's own area, but only when the pages said nothing. A listicle for one
          area routinely lists schools just outside it, so a page that names a locality is
-         evidence the school is NOT in the keyword's area, even when that locality turns out
-         to be missing from their CMS. Overriding it with the keyword would file the school
-         somewhere the page says it is not.
+         evidence the school is NOT in the keyword's area. Overriding it with the keyword
+         would file the school somewhere the page says it is not.
       3. one web lookup
-    Every option is checked against their CMS first, so a resolved area is always one that
-    can be searched and created against.
+
+    "among" is the areas their CMS offered for a shared name. When it is given, the answer
+    has to be one of them: their candidate list is the full set of places a school of that
+    name exists, so anything outside it would create a duplicate rather than match a row.
     """
+    allowed = {a.strip().lower() for a in among if a and a.strip()}
+
+    def ok(area):
+        return bool(area) and usable(city, area) and (not allowed or area.strip().lower() in allowed)
+
     from_pages = clean(candidate, city)
-    if usable(city, from_pages):
+    if ok(from_pages):
         return from_pages, "from the pages"
 
     if not from_pages:
         from_keyword = clean(blog_area, city)
-        if usable(city, from_keyword):
+        if ok(from_keyword):
             return from_keyword, "from the keyword"
 
     if not lookup:
         return "", f"pages said {from_pages or 'nothing'!r} and no lookup was run"
 
     found = lookup_area(school, city)
-    if usable(city, found):
+    if ok(found):
         return found, "from a web lookup"
 
     said = from_pages or "nothing"
+    if allowed:
+        offered = ", ".join(sorted(a for a in among if a)) or "none"
+        return "", (f"pages said {said!r}, lookup said {found or 'nothing'!r}, and their CMS "
+                    f"has this name only in: {offered}")
     if found:
-        return "", f"pages said {said!r}, lookup said {found!r}, neither is an area in their CMS"
+        return "", f"pages said {said!r}, lookup said {found!r}, neither is a usable locality"
     return "", f"pages said {said!r}, the lookup found none, so there is no area to file it under"
 
 

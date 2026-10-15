@@ -41,7 +41,6 @@ from clients import sheet
 from clients.claude_cli import ClaudeError
 from clients.cms_base import CMSError, get_cms
 from clients.tavily import TavilyError
-from stages import area as area_stage
 from stages import cms as cms_stage
 from stages import pick as pick_stage
 from stages import qc as qc_stage
@@ -212,14 +211,16 @@ def cmd_cms(sh, args):
                 continue  # done on an earlier run
             # The area is the school's own locality, never the keyword's. A city keyword like
             # "best schools in Lucknow" has no single area, and area=city is an empty area in
-            # their CMS, so using it would create a duplicate of every school. See stages/area.py.
-            school_area, note = area_stage.resolve(s["name"], city, s.get("area", ""), blog_area=area)
-            if not school_area:
-                skipped.append(f"{s['name']} ({note})")
-                print(f"  skipped {s['name']}: {note}")
-                continue
+            # their CMS, so using it would create a duplicate of every school. Their search
+            # reports each school's real area, so ensure_school only has to work one out when
+            # the name is shared or the school is new. See stages/cms.py and stages/area.py.
             try:
-                res = cms_stage.ensure_school(cms, s["name"], city, school_area)
+                res = cms_stage.ensure_school(cms, s["name"], city,
+                                              page_area=s.get("area", ""), blog_area=area)
+            except cms_stage.UnplaceableSchool as err:
+                skipped.append(str(err))
+                print(f"  skipped {err}")
+                continue
             except CMSError as err:
                 failed = err
                 break
@@ -227,9 +228,12 @@ def cmd_cms(sh, args):
                 # A CMS client that doesn't wrap its own errors must not kill the whole batch.
                 failed = f"{type(err).__name__}: {err}"
                 break
+            school_area = res.get("area", "")
             new_rows.append([kw, s["name"], res["name"], res["id"], res["slug"],
                              "y" if res["created"] else "n", school_area])
-            print(f"  {'created' if res['created'] else 'exists '} {res['id']} {res['name']} [{school_area}]")
+            flag = " REVIEW" if res.get("review") else ""
+            print(f"  {'created' if res['created'] else 'exists '} {res['id']} "
+                  f"{res['name']} [{school_area}] {res.get('note', '')}{flag}")
         if new_rows:
             sheet.append(cms_ws, new_rows)  # keep what succeeded, even if a later school failed
         if failed:
@@ -239,14 +243,14 @@ def cmd_cms(sh, args):
         # A skipped school is dropped from the blog, so the post can fall under the 8 it needs.
         resolved = len([s for s in picked if s["name"].lower() in have]) + len(new_rows)
         if resolved < MIN_SCHOOLS:
-            why = f"cms: only {resolved} of {len(picked)} schools have a usable area. " \
+            why = f"cms: only {resolved} of {len(picked)} schools could be placed. " \
                   f"Fill the Area column for: {'; '.join(skipped)}"
             sheet.set_blog(blogs_ws, b["_row"], error=why[:450])
             print(f"  error: {why}")
             continue
         if skipped:
             sheet.set_blog(blogs_ws, b["_row"], error=f"cms: dropped {len(skipped)} "
-                                                      f"without an area: {'; '.join(skipped)}"[:450])
+                                                      f"that could not be placed: {'; '.join(skipped)}"[:450])
             print(f"  {len(skipped)} dropped, {resolved} schools kept")
         sheet.set_blog(blogs_ws, b["_row"], status="cms_done")
         sheet.archive_block(sh, kw)

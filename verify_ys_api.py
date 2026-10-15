@@ -54,7 +54,7 @@ def main():
 
     check("health is ok", health)
 
-    from clients.cms_api import ApiCMS, REVIEW_BELOW
+    from clients.cms_api import ApiCMS, AmbiguousSchool, REVIEW_BELOW
     cms = ApiCMS()
 
     def doc_example():
@@ -109,13 +109,47 @@ def main():
         assert found["review"] is True, found
         return f"id {found['id']} {found['name']!r} score {found['score']} flagged for review"
 
-    def unknown_area_is_loud():
+    def area_is_optional():
+        """Their Oct 11, 2026 change: name + city is enough, and they report the area.
+
+        This is what lets stages/cms.py stop guessing a locality off a competitor page for
+        every school. If it ever regresses, that guessing has to come back.
+        """
+        found = cms.search_school("Sahoday Senior Secondary School", "Delhi")
+        assert found, "name + city found nothing, so area is required again"
+        assert found["id"] == 15043, found
+        assert found["area"] == "Hauz Khas", f"no area in their reply: {found}"
+        return f"id {found['id']} placed in {found['area']} with no area sent"
+
+    def a_shared_name_refuses_to_guess():
+        """5 Kidzees in Delhi. A guess here is a wrong school in a live blog."""
         try:
-            cms.search_school("Kidzee", "Delhi", "Zzqxville")
-        except CMSError as exc:
-            assert "Zzqxville" in str(exc), exc
-            return "a bad area raises and names the area, never returns None"
-        raise AssertionError("an unknown area should have raised")
+            cms.search_school("Kidzee", "Delhi")
+        except AmbiguousSchool as exc:
+            assert len(exc.candidates) > 1, exc.candidates
+            assert exc.areas, "candidates came back with no areas to choose from"
+            return f"{len(exc.candidates)} candidates, areas: {', '.join(exc.areas[:4])}"
+        raise AssertionError("a name shared by several schools should have raised")
+
+    def an_unknown_area_no_longer_scopes_the_search():
+        """The trap in their update, and the reason the old area check had to be rewritten.
+
+        A bad area is answered 200 with area_matched false and the search widens to the whole
+        city. Anything reading the status code - as this pipeline did until Oct 11, 2026 -
+        now says "yes, their CMS knows that area" about every typo.
+        """
+        assert cms.area_exists("Delhi", "Kalkaji") is True, "a real area reported as missing"
+        assert cms.area_exists("Delhi", "Zzqxville") is False, \
+            "a nonsense area reported as real, so a typo would be filed as a new locality"
+        return "area_matched separates a real locality from a typo, the status code does not"
+
+    def a_typod_area_does_not_place_a_school_wrongly():
+        """With a bad area their search ignores it, so the area in the answer is the truth."""
+        found = cms.search_school("Sahoday Senior Secondary School", "Delhi", "Zzqxville")
+        assert found and found["id"] == 15043, found
+        assert found["area"] == "Hauz Khas", f"filed under the typo instead of their area: {found}"
+        assert found["area_matched"] is False, found
+        return "their area wins over the one we sent"
 
     def unknown_city_is_loud():
         try:
@@ -132,7 +166,10 @@ def main():
     check("search: trim ladder recovers a padded name", trim_ladder_recovers_padded_name)
     check("search: ladder keeps the best score", ladder_keeps_the_best_score)
     check("search: a low score is flagged for review", low_score_is_flagged_for_review)
-    check("search: unknown area raises", unknown_area_is_loud)
+    check("search: area is optional, they report it", area_is_optional)
+    check("search: a shared name returns candidates", a_shared_name_refuses_to_guess)
+    check("search: an unknown area is detectable", an_unknown_area_no_longer_scopes_the_search)
+    check("search: a typo'd area does not misplace", a_typod_area_does_not_place_a_school_wrongly)
     check("search: unknown city raises", unknown_city_is_loud)
 
     # ---- writes ------------------------------------------------------------

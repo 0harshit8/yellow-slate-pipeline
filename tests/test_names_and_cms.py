@@ -2,7 +2,7 @@ import pytest
 
 from clients.cms_base import CMSError
 from clients.cms_fake import FakeCMS
-from stages.cms import ensure_school
+from stages.cms import ensure_school, UnplaceableSchool
 from stages.names import cms_name, merge, normalize, school_email
 
 
@@ -58,11 +58,21 @@ def test_merge_counts_pages_not_mentions():
     assert any(s["count"] == 2 and "Bal" in s["name"] for s in out)
 
 
+@pytest.fixture(autouse=True)
+def no_web_lookup(monkeypatch):
+    """The last-resort locality lookup is a Tavily search plus a Claude call. Not in tests."""
+    from stages import area as area_stage
+    monkeypatch.setattr(area_stage, "lookup_area", lambda school, city: "")
+
+
 @pytest.fixture
 def cms(tmp_path, monkeypatch):
     import config
     monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
-    return FakeCMS(path=str(tmp_path / "fake.json"))
+    # Real Delhi localities, so the fake can tell a new campus in a real place from a typo
+    # the way their CMS does. See FakeCMS.known_areas.
+    return FakeCMS(path=str(tmp_path / "fake.json"),
+                   areas=["Kalkaji", "Saket", "Dwarka", "Hauz Khas", "Rohini"])
 
 
 def test_create_then_rerun_reuses(cms):
@@ -77,9 +87,74 @@ def test_create_then_rerun_reuses(cms):
 
 
 def test_same_name_other_area_is_new_school(cms):
+    """Two campuses of one chain are two CMS rows, and a city-wide search must not fold them.
+
+    This is the hole a name + city search opens: with only the Kalkaji campus stored, a
+    search for "Delhi Public School" in Delhi returns it at a perfect score even when the
+    blog is about Saket. Taking that row would hang a Saket listicle off a Kalkaji school.
+    """
     a = ensure_school(cms, "Delhi Public School", "Delhi", "Kalkaji")
     b = ensure_school(cms, "Delhi Public School", "Delhi", "Saket")
     assert a["id"] != b["id"]
+    assert a["area"] == "Kalkaji" and b["area"] == "Saket"
+
+
+def test_a_misspelt_locality_keeps_their_match_instead_of_creating(cms):
+    """A locality their CMS has never heard of is a typo far more often than a new campus.
+
+    "Kalkajee" is not a place, so creating under it would both duplicate the school and add
+    a junk locality that splits Kalkaji's schools in two. Keep their row, flag it instead.
+    """
+    first = ensure_school(cms, "Delhi Public School", "Delhi", "Kalkaji")
+    again = ensure_school(cms, "Delhi Public School", "Delhi", "Kalkajee")
+    assert again["id"] == first["id"]
+    assert again["review"] is True
+    assert len(cms.schools) == 1
+
+
+def test_the_area_recorded_is_the_one_their_cms_holds(cms):
+    """Their area wins over the page's. The page is a guess, their CMS row is a fact."""
+    ensure_school(cms, "Sahoday Senior Secondary School", "Delhi", "Hauz Khas")
+    # the pages say nothing this time, and a city-wide search still places it correctly
+    again = ensure_school(cms, "Sahoday Senior Secondary School", "Delhi", "")
+    assert again["created"] is False
+    assert again["area"] == "Hauz Khas"
+
+
+def test_a_shared_name_is_placed_from_the_page_not_guessed(cms):
+    """With the name in two localities their API refuses to choose, so the page decides."""
+    dwarka = ensure_school(cms, "Kidzee", "Delhi", "Dwarka")
+    kalkaji = ensure_school(cms, "Kidzee", "Delhi", "Kalkaji")
+    assert dwarka["id"] != kalkaji["id"]
+    again = ensure_school(cms, "Kidzee", "Delhi", "Kalkaji")
+    assert again["id"] == kalkaji["id"]
+    assert again["created"] is False
+
+
+def test_a_shared_name_with_no_locality_is_dropped_not_duplicated(cms):
+    """Nothing says which Kidzee this is, so the school leaves the blog. It never creates.
+
+    Returning "not found" here is what used to add a third Kidzee to a CMS that had two.
+    """
+    ensure_school(cms, "Kidzee", "Delhi", "Dwarka")
+    ensure_school(cms, "Kidzee", "Delhi", "Kalkaji")
+    with pytest.raises(UnplaceableSchool):
+        ensure_school(cms, "Kidzee", "Delhi", "", blog_area="")
+    assert len(cms.schools) == 2
+
+
+def test_an_incomplete_cms_row_is_dropped_not_published(cms):
+    """Their row 8010 has area null and slug "/dav-public-school-": a dead profile link.
+
+    Nine schools with working links beat ten with one broken one, and the message names the
+    row so it can be fixed at their end.
+    """
+    cms.schools.append({"id": 8010, "name": "DAV Public School", "slug": "/dav-public-school-",
+                        "city": "Delhi", "area": "", "email": "dav@x.com",
+                        "verified": False, "claimed": False})
+    with pytest.raises(UnplaceableSchool) as caught:
+        ensure_school(cms, "DAV Public School", "Delhi", "")
+    assert "8010" in str(caught.value)
 
 
 def test_duplicate_email_rejected(cms):
@@ -113,3 +188,47 @@ def test_spelling_variants_still_match(cms):
 def test_merge_keeps_different_schools_apart():
     out = merge({"a": ["DAV Public School", "Kalka Public School"], "b": ["Kalka Public School"]})
     assert len(out) == 2
+
+
+# ---- a school with parent ratings outranks one without ---------------------------------------
+
+def test_merge_ranks_a_rated_school_above_a_better_listed_one():
+    """Three listicles naming a school do not beat one directory showing real parent ratings.
+
+    This is what filled the Kolar post with schools nobody had reviewed: consensus alone put
+    them first, and their review graphs had nothing to draw.
+    """
+    out = merge({
+        "a": [{"name": "Listicle Favourite School", "area": "Tamaka"}],
+        "b": [{"name": "Listicle Favourite School", "area": "Tamaka"}],
+        "c": [{"name": "Listicle Favourite School", "area": "Tamaka"}],
+        "d": [{"name": "Well Reviewed School", "area": "Cottonpet", "reviews": 186}],
+    })
+    assert out[0]["name"] == "Well Reviewed School"
+    assert out[0]["reviews"] == 186
+    assert out[1]["name"] == "Listicle Favourite School"
+    assert out[1]["count"] == 3
+
+
+def test_merge_keeps_the_largest_review_count_any_page_gave():
+    out = merge({
+        "a": [{"name": "Chinmaya Vidyalaya", "area": "Cottonpet", "reviews": 186}],
+        "b": [{"name": "Chinmaya Vidyalaya", "area": "Cottonpet", "reviews": 210}],
+        "c": [{"name": "Chinmaya Vidyalaya", "area": "Cottonpet"}],
+    })
+    assert len(out) == 1
+    assert out[0]["reviews"] == 210
+
+
+def test_merge_still_ranks_unrated_schools_by_consensus():
+    out = merge({
+        "a": ["Quiet School", "Popular School"],
+        "b": ["Popular School"],
+    })
+    assert [s["name"] for s in out] == ["Popular School", "Quiet School"]
+    assert all(s["reviews"] == 0 for s in out)
+
+
+def test_merge_ignores_a_review_count_that_is_not_a_number():
+    out = merge({"a": [{"name": "A School", "area": "", "reviews": "lots"}]})
+    assert out[0]["reviews"] == 0

@@ -8,8 +8,21 @@ Rules:
 - Only schools that are part of the page's list. Ignore schools mentioned in ads, sidebars, "related posts", navigation, or comments.
 - Only K-12 schools (primary, secondary, senior secondary, international). Leave out play schools, preschools, creches, daycares, nursery-only schools, coaching centres and colleges.
 - Write each school's name as the page writes it, without numbering.
-- If a page has no school list (e.g. a directory search page or an unrelated page), return an empty list for it.
+- A directory's city listing DOES count as a list when it names schools and the town or
+  locality of each (careers360's "Schools in <city>" page is the usual one). These are often
+  the only pages that give a locality at all, which is the one field a school cannot be filed
+  without, so read them as carefully as a ranked listicle.
+- Return an empty list only for a page that names no schools: an empty search form, a single
+  school's own website, a consultancy's marketing page, or an unrelated page.
+- A page that offers schools "in and near <city>" is listing other cities too. Take only the
+  ones the page places in this city, and read any distance it prints: "111 km from <city>"
+  means the school is not in it.
 - Do not invent schools. Do not add schools you know of that the page does not list.
+- If the page prints a parent rating next to a school, record how many ratings or reviews it
+  rests on as "reviews" (the number, not the stars): "4.0 / 42 Ratings" is 42. Use 0 when the
+  page shows no rating, and 0 when it shows stars but no count. Never estimate it. This is how
+  a school parents have actually reviewed gets ranked above one that only appears in
+  listicles, so take it from every page that prints it, directory listings above all.
 
 The locality rule matters as much as the name, so read it carefully:
 - "area" is the neighbourhood or sector the school is in, as the page states it: "Gomti Nagar",
@@ -27,7 +40,7 @@ The locality rule matters as much as the name, so read it carefully:
 
 Answer with exactly this JSON shape and nothing else:
 
-{{"pages": [{{"url": "<page url>", "schools": [{{"name": "<name>", "area": "<locality or empty string>"}}]}}]}}
+{{"pages": [{{"url": "<page url>", "schools": [{{"name": "<name>", "area": "<locality or empty string>", "reviews": <how many ratings the page shows, else 0>}}]}}]}}
 
 PAGES:
 
