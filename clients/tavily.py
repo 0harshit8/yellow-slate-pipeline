@@ -52,7 +52,13 @@ def search(query, max_results=10, exclude=None, include=None):
     return _call("search", payload).get("results", [])
 
 
-def extract(urls):
-    """Returns {url: markdown}. Failed URLs are left out."""
-    data = _call("extract", {"urls": urls[:20], "extract_depth": "basic", "format": "markdown"})
+def extract(urls, depth="basic"):
+    """Returns {url: markdown}. Failed URLs are left out.
+
+    depth is Tavily's extract_depth. "basic" gives each page about ten seconds, which a
+    heavy directory page can miss - Justdial's city listing answered "Request timed out" at
+    basic and came back in full at "advanced". Advanced costs more credits per page, so the
+    caller decides when a lost page is worth paying for it.
+    """
+    data = _call("extract", {"urls": urls[:20], "extract_depth": depth, "format": "markdown"})
     return {r["url"]: r.get("raw_content") or "" for r in data.get("results", [])}

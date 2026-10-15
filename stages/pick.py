@@ -59,6 +59,31 @@ def _urls(query):
     return urls
 
 
+def _extract(urls):
+    """Read the pages. Anything the basic extract lost is re-read at advanced depth.
+
+    Tavily's basic extract gives a page about ten seconds and clients/tavily.py leaves a URL
+    that misses it out of the result, with no error. Measured on Kolar, Oct 15 2026: Justdial
+    was first in this list and came back "Request timed out", so the only page in the run
+    that printed a rating count per school never reached the extractor and every candidate
+    arrived with reviews = 0. The same page at advanced depth returned in full, with ten
+    schools, their ratings and their localities.
+
+    Retrying only the lost URLs keeps the advanced surcharge off the pages that worked, and
+    nothing is retried at all on a clean run. The retry is swallowed: pages that did arrive
+    are still a usable pick.
+    """
+    pages = {u: body for u, body in tavily.extract(urls).items() if body.strip()}
+    missing = [u for u in urls if u not in pages]
+    if missing:
+        try:
+            pages.update({u: body for u, body in tavily.extract(missing, depth="advanced").items()
+                          if body.strip()})
+        except tavily.TavilyError:
+            pass
+    return pages
+
+
 def candidates(keyword, city=""):
     """Returns (shortlist, pages_read). Raises TavilyError / ClaudeError on failure."""
     query = f"{keyword} {city}".strip() if city and city.lower() not in keyword.lower() else keyword
@@ -66,8 +91,7 @@ def candidates(keyword, city=""):
     if not urls:
         return [], 0
 
-    pages = tavily.extract(urls)
-    pages = {u: body for u, body in pages.items() if body.strip()}
+    pages = _extract(urls)
     if not pages:
         return [], 0
 
