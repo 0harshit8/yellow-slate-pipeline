@@ -45,24 +45,86 @@ Collect everything before moving on. Ask for all required items; proceed without
 
 ## Step 2: Research & Analysis Phase
 
-For **each school** in the list, conduct web searches to gather:
+For **each school** in the list, conduct web searches to gather the fields below.
+
+**Where the effort goes.** Fees and parent reviews are the two fields that actually go
+missing, so they deserve the larger share of searching. Measured across the nine published
+blogs: 28 of 79 school sections carried no fee at all and 12 carried no usable review data,
+while the registry fields were filled almost every time. Budget roughly 4-5 searches for fees,
+3-4 for reviews, 2 for the registry record and 1-2 for the official site.
+
+**Rephrasing is waste; a different source is not.** If two well-formed queries have not found
+the registry page, stop and record the gap. But for fees and reviews, a second query that names
+*different sites* is the whole point — that is what the ladders below are. Asking the same
+question in different words is what never works.
+
+> In pipeline runs this research is done by `school-researcher` subagents, not by you, and they
+> work to a hard cap of 14 searches per school. The ladders and rules in 2.1-2.4 are the same
+> ones they follow, so this section stays the single description of how a school gets researched.
 
 ### 2.1 Parent Reviews
-Search Yellow Slate, Justdial, Mouthshut, and Google Reviews. Analyze overall sentiment with percentage breakdowns across:
-- Academics / Curriculum
-- Infrastructure / Facilities
-- Management / Administration
-- Extracurricular Activities
-- Fee Structure
-- Overall Satisfaction
+
+**Work down this ladder until something pays out.** Stop at the first rung that gives a result;
+only an empty rung sends you to the next.
+
+1. `"<school name>" <locality> reviews rating parents Justdial`
+2. `"<school name>" <locality> Google Maps reviews rating`
+3. `careers360 OR schoolmykids OR sulekha "<school name>" <locality> reviews rating`
+4. `"<school name>" <locality> parents review facebook OR mouthshut`
+
+Also check Yellow Slate's own profile for the school.
+
+**Rungs 2-4 are not optional extras.** A star rating with a vote count is a result. So is a
+handful of written reviews. Measured on Kolar: Justdial listed 23 Kolar schools with ratings and
+Google Maps showed four with 143-195 reviews each, while the research reported "no review signal"
+for nine of ten schools — only rung 1 had been tried.
+
+**Categories.** Report positive/negative percentages for every category you have any signal on:
+
+`Academics, Infrastructure, Teachers/Staff, Extracurriculars, Management, Fee Satisfaction`
+
+Derive them from whatever exists — an aggregate star rating, a handful of written reviews,
+follower or shortlist counts. Record what the percentages rest on (e.g. "4.1 stars over 37
+Justdial ratings").
+
+**A thin base is never a reason to publish nothing.** Publish the percentages and say the base
+is small, with how small.
+
+**Never write 0/0 for a category, and never a set where every category is 0.** Zero does not
+mean "no parents rated this", it means "4 in 5 parents marked it negative", and the graph prints
+it as an empty bar. Include **only** the categories you found signal for and leave the rest out
+entirely. If no category has signal after all four rungs, the school carries no review graph at
+all. The Kolar blog published nine schools whose every category was 0/0, and the pipeline drew
+nine titled, labelled, completely empty graphs.
 
 ### 2.2 Fee Structure
-Search in this priority order:
-1. School's official website (check Mandatory Disclosure page, PDFs, downloads)
-2. Edustoke (edustoke.com)
-3. Ezyschooling (ezyschooling.com)
 
-**Do NOT hyperlink Edustoke or Ezyschooling in the final blog.**
+**Work down this ladder until something pays out.** Stop at the first rung that gives a figure;
+only an empty rung sends you to the next.
+
+1. `"<school name>" <locality> fee structure site:<official domain>`
+   — the 2025 Delhi fee Act requires fees to be published on the school's own site, so that is
+   the right citation when it exists. **One search and at most one fetch, then move on.**
+   Check the Mandatory Disclosure page, PDFs and downloads. Skip this rung if the school has no
+   working site.
+2. `uniapply OR ezyschooling OR edustoke "<school name>" <locality> fees`
+   — these three publish class-wise tables.
+3. `careers360 OR schoolsuniverse OR schoolmykids "<school name>" <locality> fees`
+4. `"<school name>" <locality> "fee structure" 2026-27 annual fees`
+
+**Rungs 3 and 4 are not optional extras — they are where the misses were.** Kalka Public School
+Kalkaji was published as "contact the school" while SchoolsUniverse carried ₹53,000 for the first
+year, Careers360 ₹57,420 and Uniapply a monthly figure. Careers360 supplied *every* fee that was
+found for the Kolar blog. A single annual or per-class figure from rung 3 or 4 beats no figure,
+so take it and name the source.
+
+**An annual figure with no class-wise breakdown is still a result.** Publish the figure and say
+class-wise numbers are not published. **Never write "contact the school" when you have a
+number** — reserve that phrase for a fee that is genuinely absent after all four rungs, and for
+current-cycle admission dates and seat vacancies.
+
+Name whichever source you used in the citation line. **Do NOT hyperlink Edustoke or Ezyschooling
+in the final blog.**
 
 ### 2.3 Admission Process
 Search in this priority order:
@@ -70,8 +132,10 @@ Search in this priority order:
 2. Ezyschooling / Edustoke admission tabs
 3. The school's own social media for the current cycle's dates
 
-If only *last* season's window is documented, say so explicitly ("the usual cycle runs …")
-rather than presenting an old date as current.
+Describe the process in one or two lines. If only *last* season's window is documented, say so
+explicitly ("the usual cycle runs …") rather than presenting an old date as current. Unpublished
+current-cycle dates and seat vacancies are one of the few places "Contact the school for the
+latest details." is the correct line.
 
 ### 2.4 Key Facts — one source order per field
 
@@ -206,7 +270,13 @@ Generate a horizontal bar chart for each school using Python matplotlib:
 - Data must exactly match text percentages
 - Alt text: `"Parent sentiment breakdown for [School Name]"`
 
-If graph generation isn't possible, provide the data table as fallback.
+**Only plot the categories that 2.1 found signal for.** A category with no number is left out of
+the chart, not passed in as `[0, 0]` — that draws a labelled, empty bar. A school with no review
+signal at all gets no graph and no fallback table; say in the text that parent reviews are not
+yet on record for it.
+
+If graph generation isn't possible for a school that *does* have data, provide the data table as
+fallback.
 
 ---
 
