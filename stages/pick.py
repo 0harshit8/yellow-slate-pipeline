@@ -25,7 +25,23 @@ SHORTLIST = 15
 # schools each with its own town. A missing locality is what makes the cms stage drop a
 # school, so this is the cheapest fix for it.
 PREFERRED = ["school.careers360.com", "justdial.com"]
-PREFERRED_SLOTS = 3
+PREFERRED_PER_DOMAIN = 2  # kept per domain, so neither can take the other's slots
+PREFERRED_PROBE = 5  # asked of Tavily per domain, larger than we keep - see below
+
+# Searched one domain at a time, not in one search with both included. Measured on Kolar,
+# Oct 15 2026: include=PREFERRED with both domains and max_results=3 returned justdial's
+# Kolar page plus two careers360 SCHOOL pages (christ-international-school-alambady-kolar,
+# gnana-jyothi-school-mulbagal-kolar), which carry one locality each and no list at all.
+# Tavily ranks freely inside the included domains, so careers360 lost two of the three
+# shared slots to single schools - the city list this whole block exists for never arrived.
+# include=["school.careers360.com"] alone with max_results=5 returned five "schools in
+# Kolar" city lists instead (kseeb-, cbse-, karnataka-board-pue-, central-government-,
+# day-cum-boarding-), top to bottom. A per-domain allowance is therefore enough on its own:
+# nothing has to rank list-shaped paths above school ones, so nothing does.
+#
+# PREFERRED_PROBE is larger than PREFERRED_PER_DOMAIN because include is sensitive to the
+# result count rather than a top-N of one fixed list: that same careers360 search returned
+# 0 hits at max_results=3 and 5 hits at max_results=5 the same day. So ask for 5, keep 2.
 
 # Directories that print a parent rating and a rating count next to each school. Without one
 # of these in the pages, every candidate arrives with no review signal and the picker has no
@@ -40,17 +56,24 @@ RATED = ["justdial.com"]
 def _urls(query):
     """Up to MAX_PAGES pages to read: the PREFERRED directories first, then what ranks.
 
-    The preferred ones go first so a long page never pushes them out of the prompt, and they
-    only take the slots they fill - a directory with nothing for this city costs nothing. A
-    failure there is not a failed pick, so it is swallowed and the ranking pages carry on.
+    One search per preferred domain, each keeping PREFERRED_PER_DOMAIN pages, because a
+    single search with both domains included lets Tavily's ranking hand one domain the
+    other's slots - see PREFERRED above for the numbers. The preferred ones go first so a
+    long page never pushes them out of the prompt, and they only take the slots they fill:
+    a directory with nothing for this city costs nothing. A failure in one domain is not a
+    failed pick, so it is swallowed and the other domain and the ranking pages carry on.
     """
-    try:
-        preferred = [r["url"] for r in tavily.search(query, max_results=PREFERRED_SLOTS,
-                                                     include=PREFERRED)]
-    except tavily.TavilyError:
-        preferred = []
+    urls = []
+    for domain in PREFERRED:
+        try:
+            hits = [r["url"] for r in tavily.search(query, max_results=PREFERRED_PROBE,
+                                                    include=[domain])]
+        except tavily.TavilyError:
+            continue
+        for url in hits[:PREFERRED_PER_DOMAIN]:
+            if url not in urls and len(urls) < MAX_PAGES:
+                urls.append(url)
 
-    urls = preferred[:PREFERRED_SLOTS]
     for url in (r["url"] for r in tavily.search(query, max_results=10, exclude=EXCLUDE)):
         if len(urls) >= MAX_PAGES:
             break
