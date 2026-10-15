@@ -23,7 +23,12 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
    LOCALITY: <area>, <city>
    CMS_ID: <id>
    PROFILE_URL: <url>
+   DIRECTORY_RATINGS: <the "Directory ratings" value from the list above>
    ```
+
+   `DIRECTORY_RATINGS` is how many parent ratings stage 1 counted for that school on a
+   directory page it already read. It is evidence the listing exists, and the researcher
+   knows what to do with it. Copy the number across exactly, or `NONE`.
 
    **Don't pass a model when you spawn them.** The researchers run on a stronger model than you
    do, set in their own definition, because their half of the job is the one nothing checks

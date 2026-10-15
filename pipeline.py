@@ -261,8 +261,11 @@ def cmd_write(sh, args):
     done = sheet.records(sh.worksheet(sheet.CMS))
     for b in rows_in(sheet.records(blogs_ws), "cms_done", args):
         kw = b["Keyword"].strip()
+        # page_name is the name the directory pages used, which is how pick.json keys its
+        # rating counts. It is often spelled differently from the CMS name.
         picked = [{"name": r["CMS name"], "id": r["CMS ID"], "slug": r["CMS slug"],
-                   "area": r.get("Area", "")} for r in cms_rows(done, kw)]
+                   "area": r.get("Area", ""), "page_name": r.get("School", "")}
+                  for r in cms_rows(done, kw)]
         print(f"write: {kw} ({len(picked)} schools). This takes a while...")
         try:
             path, problems = write_stage.write_blog(kw, b["City"], b["Area"], b["Slug"] or blog_slug(kw, b["City"]), picked)
