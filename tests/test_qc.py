@@ -79,3 +79,53 @@ def test_missing_photo_is_only_a_warning():
     passed, lines = check_blog(md, KW, expected_ids=["900001", "900002"])
     assert passed, fails(lines)
     assert any(l.startswith("WARN") and "no school image" in l for l in lines)
+
+
+# ---- a school count claimed in the meta must match the post ---------------------------------
+
+def meta_with(description="", title="Best Schools in Kalkaji", meta_title="Best Schools in Kalkaji"):
+    return {"title": title, "meta_title": meta_title, "meta_description": description}
+
+
+def test_a_stale_meta_count_fails():
+    """The Kolar post shipped this: a school was dropped by hand and meta.json kept the old
+    number, so the description promised ten schools over a post that listed nine. Every other
+    meta rule passed, because they only ask whether a description is there at all.
+    """
+    passed, lines = check_blog(load(), KW, meta=meta_with("Fee details for 3 CBSE schools in Kalkaji."))
+    assert not passed
+    assert any("meta says 3, the post has 2" in l for l in fails(lines))
+
+
+def test_a_matching_meta_count_passes():
+    passed, lines = check_blog(load(), KW, meta=meta_with("Fee details for 2 CBSE schools in Kalkaji."))
+    assert passed, fails(lines)
+
+
+def test_a_count_in_the_title_is_checked_too():
+    passed, lines = check_blog(load(), KW, meta=meta_with(
+        "Fees, admission and reviews.", title="Top 7 Schools in Kalkaji", meta_title="Top 7 Schools in Kalkaji"))
+    assert any("meta says 7, the post has 2" in l for l in fails(lines))
+
+
+def test_a_meta_claiming_no_count_is_left_alone():
+    """Most descriptions never state a number, and inventing a complaint about that would
+    fail every blog that reads naturally."""
+    passed, lines = check_blog(load(), KW, meta=meta_with(
+        "Compare curriculum, grades, location, admission and fees for the best schools in Kalkaji."))
+    assert passed, fails(lines)
+    assert not any("school count" in l for l in lines)
+
+
+def test_a_session_year_is_not_a_school_count():
+    """"2026-27" sits in every title this pipeline writes, and "27" must not read as a count."""
+    passed, lines = check_blog(load(), KW, meta=meta_with(
+        "Best schools in Kalkaji 2026-27: fees and admission for 2 schools.",
+        title="Best Schools in Kalkaji 2026-27", meta_title="Best Schools in Kalkaji 2026-27"))
+    assert passed, fails(lines)
+
+
+def test_a_class_number_is_not_a_school_count():
+    passed, lines = check_blog(load(), KW, meta=meta_with(
+        "Compare Class 10 schools in Kalkaji on fees, admission and parent reviews."))
+    assert passed, fails(lines)

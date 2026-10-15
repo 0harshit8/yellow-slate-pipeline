@@ -15,6 +15,14 @@ BAD_LINK = re.compile(r"\]\([^)]*(edustoke|ezyschooling)[^)]*\)", re.I)
 BULLET = re.compile(r"^[ \t]*[-*][ \t]+(.*)$", re.M)
 # A fee amount in any form the writer uses. The three-tier fee rule turns on whether one is present.
 FEE_AMOUNT = re.compile(r"(?:₹|Rs\.?\s*)\d")
+# A school count claimed in the title or the description: "for 10 CBSE schools", "the 9 best
+# schools", "Top 12 Schools in Kolar". Two digits at most, and never one preceded by a digit
+# or a hyphen, because "2026-27" is in every title this pipeline writes and its "27" must not
+# read as a count. A number introducing a class is excluded for the same reason. Written as
+# digits only: "nine schools" is not checked, which leaves a gap but never invents a failure.
+META_COUNT = re.compile(
+    r"(?<![\d-])(?<!\bclass )(?<!\bgrade )(?<!\bstd )\b(\d{1,2})\b(?=[^.]{0,30}?\bschools?\b)",
+    re.I)
 
 
 def _school_blocks(md):
@@ -54,6 +62,16 @@ def word_count(md):
     body = re.sub(r"\[(?:btn_admissions|read_more_blogs)[^\]]*\]", "", body)
     body = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", body)  # keep link text, drop the URL
     return len(re.findall(r"[A-Za-z0-9][A-Za-z0-9'’.-]*", body))
+
+
+def meta_school_counts(meta):
+    """Every school count the title, meta title or description claims. [] when none does.
+
+    The fields are joined with a full stop so the lookahead cannot read "schools" out of the
+    next field and pin it on a number in this one.
+    """
+    text = " . ".join(str(meta.get(k, "")) for k in ("title", "meta_title", "meta_description"))
+    return [int(n) for n in META_COUNT.findall(text)]
 
 
 def check_school(name, text, folder):
@@ -122,6 +140,18 @@ def check_blog(md, keyword, expected_ids=None, folder=None, meta=None):
 
     blocks = _school_blocks(md)
     rule(len(blocks) >= 1, f"{len(blocks)} school sections found")
+
+    # A count in the meta is a promise to the reader and to Google, and dropping a school by
+    # hand after a write run leaves it stale: the Kolar post went out offering ten schools
+    # over nine sections, and every other meta rule passed because they only ask whether a
+    # description is present. Only checked when a count is actually claimed.
+    if meta is not None:
+        claimed = sorted(set(meta_school_counts(meta)))
+        wrong = [c for c in claimed if c != len(blocks)]
+        if claimed:
+            rule(not wrong, "meta school count matches the post" + (
+                f" -> meta says {', '.join(str(c) for c in wrong)}, the post has {len(blocks)}"
+                if wrong else ""))
     for name, text in blocks:
         issues, warnings = check_school(name, text, folder)
         rule(not issues, f"school: {name}" + (f" -> {'; '.join(issues)}" if issues else ""))
