@@ -295,7 +295,13 @@ def cmd_qc(sh, args):
         ids = [r["CMS ID"] for r in cms_rows(done, kw) if r["CMS ID"].strip()]
         meta_path = os.path.join(folder, "meta.json")
         meta = json.load(open(meta_path, encoding="utf-8")) if os.path.exists(meta_path) else {}
-        passed, lines = qc_stage.check_blog(md, kw, expected_ids=ids, folder=folder, meta=meta)
+        # notes.md carries the researcher's record of what it tried. A fee or a review
+        # nobody publishes is declared there, and qc excuses that one section rather than
+        # leaving the blog permanently unpassable.
+        notes_path = os.path.join(folder, "notes.md")
+        notes = open(notes_path, encoding="utf-8").read() if os.path.exists(notes_path) else ""
+        passed, lines = qc_stage.check_blog(md, kw, expected_ids=ids, folder=folder, meta=meta,
+                                            notes=notes)
         with open(os.path.join(folder, "qc.txt"), "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + "\n")
         fails = [l for l in lines if l.startswith("FAIL")]

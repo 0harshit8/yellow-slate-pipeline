@@ -63,6 +63,22 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
      heading at the top of notes.md with what the researcher tried. A human replaces it with
      a better-documented school rather than publishing a section with two holes in it.
 
+   **Then record every one of those absences in a block QC can read.** A school whose fee or
+   reviews nobody publishes used to fail QC forever, because the check cannot tell an absent
+   figure from a lazy one. It can now, but only from this block. At the **end** of notes.md:
+
+       ## Documented absences
+       - <school name, spelled as its H2 spells it> | fee | what you tried and what each source gave
+       - <school name> | reviews | what you tried and what each source gave
+
+   One line per school per missing field, and the field is `fee` or `reviews`, nothing else.
+   Write a `fee` line for every `FEES: NOT_FOUND`, a `reviews` line for every
+   `REVIEWS: NOT_FOUND`, and both lines for every `NO_EVIDENCE: YES`, putting the
+   researcher's own attempt list in the reason. QC reads this block and nothing else, and it
+   excuses only that school's missing fee amount or missing review graph and percentages --
+   every other rule still applies. A reason under eight words is ignored, so name the sources.
+   Leave the heading out entirely when nothing is missing.
+
    Never add a fact no fact sheet contains. You did not do this research and cannot check it.
 
    **If the `school-researcher` subagent type does not exist**, stop and reply

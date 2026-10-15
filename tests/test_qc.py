@@ -174,3 +174,94 @@ def test_a_review_section_with_no_percentages_fails():
     passed, lines = check_blog(md, KW)
     assert not passed
     assert any("review section has no percentages" in l for l in fails(lines))
+
+
+# --------------------------------------------------------------------------- #
+# Documented absences. A fee or a parent review that no source publishes cannot be
+# written, and before this a school like Hill View (Kalkaji, Oct 2026: ten sources
+# tried, nothing found) could never pass. The escape turns those FAILs into WARNs,
+# but only when notes.md records what was tried, so an absence has to be researched
+# and written down rather than merely asserted. qc_pass still goes to a human.
+
+ABSENCES = """## Documented absences
+- Delhi Public School Kalkaji | fee | Ezyschooling gated the table, Uniapply says unavailable, Careers360 and SchoolMyKids carry no listing, no official site and no UDISE record
+- Delhi Public School Kalkaji | reviews | no ratings on Justdial, Google Maps, Sulekha, Facebook or MouthShut, and the school has no official page
+"""
+
+
+def no_fee_amount(md):
+    """School 1's fee table and amount removed, its Source line kept."""
+    return md.replace("| Class | Annual Fee |\n| --- | --- |\n| Nursery | 1,20,000 |\n",
+                      "Fees are not published.\n", 1)
+
+
+def no_reviews(md):
+    """School 1's review percentage and sentiment graph removed."""
+    md = md.replace("- 80% positive on academics", "- Parents speak warmly of the staff", 1)
+    return md.replace(
+        "![Parent sentiment breakdown for Delhi Public School Kalkaji](graphs/dps.png)\n", "", 1)
+
+
+def test_undocumented_fee_absence_still_fails():
+    passed, lines = check_blog(no_fee_amount(load()), KW)
+    assert not passed
+    assert any("fee section has no amount" in l for l in fails(lines))
+
+
+def test_documented_fee_absence_passes():
+    passed, lines = check_blog(no_fee_amount(load()), KW, notes=ABSENCES)
+    assert passed, fails(lines)
+    assert any("fee section has no amount" in l and l.startswith("WARN") for l in lines)
+
+
+def test_undocumented_review_absence_still_fails():
+    passed, lines = check_blog(no_reviews(load()), KW)
+    assert not passed
+    assert any("no parent review graph" in l for l in fails(lines))
+
+
+def test_documented_review_absence_passes():
+    passed, lines = check_blog(no_reviews(load()), KW, notes=ABSENCES)
+    assert passed, fails(lines)
+    assert any("no parent review graph" in l and l.startswith("WARN") for l in lines)
+
+
+def test_absence_without_a_reason_is_ignored():
+    """A bare claim is not documentation; the reason is the evidence of research."""
+    notes = "## Documented absences\n- Delhi Public School Kalkaji | fee | none\n"
+    passed, lines = check_blog(no_fee_amount(load()), KW, notes=notes)
+    assert not passed
+    assert any("fee section has no amount" in l for l in fails(lines))
+
+
+def test_absence_for_another_school_does_not_excuse_this_one():
+    notes = ABSENCES.replace("Delhi Public School Kalkaji", "Bal Bharati Public School Kalkaji")
+    passed, lines = check_blog(no_fee_amount(load()), KW, notes=notes)
+    assert not passed
+    assert any("fee section has no amount" in l for l in fails(lines))
+
+
+def test_absence_outside_the_block_is_ignored():
+    """Prose elsewhere in notes.md must not excuse anything, or the block means nothing."""
+    notes = ("## Other schools with weak evidence\n"
+             "- Delhi Public School Kalkaji | fee | Ezyschooling gated the table and no other "
+             "directory carries a figure for this school at all\n")
+    passed, lines = check_blog(no_fee_amount(load()), KW, notes=notes)
+    assert not passed
+
+
+def test_declared_fee_absence_does_not_excuse_a_published_table_with_no_source():
+    """The escape names one failure. A school that did publish a table still needs its
+    Source line, so declaring an absence cannot wave the fee rules through as a group."""
+    md = load().replace("Source: Delhi Public School Kalkaji Official Website", "", 1)
+    passed, lines = check_blog(md, KW, notes=ABSENCES)
+    assert not passed
+    assert any("fee table has no Source: line" in l for l in fails(lines))
+
+
+def test_documented_absence_does_not_excuse_other_schools_rules():
+    """School 2 keeps failing on its own merits while school 1 is excused."""
+    md = no_fee_amount(load()).replace('id="900002"', 'id=""', 1)
+    passed, lines = check_blog(md, KW, notes=ABSENCES)
+    assert not passed
+    assert any("empty btn_admissions id" in l for l in fails(lines))

@@ -32,6 +32,59 @@ META_COUNT = re.compile(
     re.I)
 
 
+# A fee or a parent review that no source publishes. The section cannot be written, so
+# before this such a school could never pass: Hill View Public School (Kalkaji, Oct 2026)
+# was looked for on Ezyschooling, Uniapply, Careers360, SchoolsUniverse, SchoolMyKids,
+# Justdial, Google Maps, Sulekha, Facebook and MouthShut, had no official site and no
+# UDISE record, and carried neither a fee nor a rating.
+#
+# The escape excuses that one absence and nothing else, and only when notes.md records
+# what was tried. This is deliberately not the rule removed on 2026-10-08, which read
+# "contact the school" out of the blog body: that rewarded a phrase the writer could type,
+# while this asks for research the researcher had to do and write down. It cannot tell a
+# true record from an invented one, so it does not try to -- qc_pass still goes to a human,
+# and the reason is printed next to the WARN for them to read.
+ABSENCE_HEAD = re.compile(r"^#{1,4}\s*documented absences\s*$", re.I | re.M)
+ABSENCE_LINE = re.compile(
+    r"^[ \t]*[-*][ \t]+(.+?)\s*\|\s*(fee|reviews)\s*\|\s*(.+?)\s*$", re.I | re.M)
+# The same floor _substance() uses: a few words are a claim, a sentence is a record.
+ABSENCE_REASON_WORDS = 8
+
+# What a declared absence is allowed to excuse. Nothing else in the section is touched, so
+# a school with no published fee still needs its Source line, its bullets and its shortcode.
+EXCUSED = {
+    "fee": ("fee section has no amount",),
+    "reviews": ("no parent review graph", "review section has no percentages"),
+}
+
+
+def _norm(name):
+    """School names reach QC from the CMS and notes.md from the researcher, which spell
+    them differently ('RAM KRISHNA ...' vs 'Ram-Krishna ...')."""
+    return re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
+
+
+def absences(notes):
+    """{normalised school name: {"fee"|"reviews": reason}} from notes.md.
+
+    Only lines under a "Documented absences" heading count, so prose elsewhere in the file
+    excuses nothing, and only lines carrying a reason of real length: a bare "none"
+    documents nothing and is ignored.
+    """
+    if not notes:
+        return {}
+    head = ABSENCE_HEAD.search(notes)
+    if not head:
+        return {}
+    nxt = re.search(r"^#{1,4}\s", notes[head.end():], re.M)
+    block = notes[head.end(): head.end() + nxt.start()] if nxt else notes[head.end():]
+    found = {}
+    for name, field, reason in ABSENCE_LINE.findall(block):
+        if len(re.findall(r"[A-Za-z0-9][A-Za-z0-9'’.-]*", reason)) >= ABSENCE_REASON_WORDS:
+            found.setdefault(_norm(name), {})[field.lower()] = reason
+    return found
+
+
 def _school_blocks(md):
     """[(name, text)] for each '## N. School' section, cut before the conclusion / FAQ."""
     marks = list(H2_SCHOOL.finditer(md))
@@ -152,7 +205,7 @@ def check_school(name, text, folder):
     return issues, warnings
 
 
-def check_blog(md, keyword, expected_ids=None, folder=None, meta=None):
+def check_blog(md, keyword, expected_ids=None, folder=None, meta=None, notes=None):
     """Returns (passed, [lines]). Lines are 'PASS ...', 'FAIL ...' or 'WARN ...' (warnings never fail)."""
     lines, kw = [], keyword.lower()
 
@@ -182,8 +235,16 @@ def check_blog(md, keyword, expected_ids=None, folder=None, meta=None):
             rule(not wrong, "meta school count matches the post" + (
                 f" -> meta says {', '.join(str(c) for c in wrong)}, the post has {len(blocks)}"
                 if wrong else ""))
+    declared = absences(notes)
     for name, text in blocks:
         issues, warnings = check_school(name, text, folder)
+        # An absence this school declared stops being a failure and becomes a warning
+        # carrying its reason, so the human reviewing qc_pass sees what was tried.
+        excused = declared.get(_norm(name), {})
+        allowed = {msg: field for field in excused for msg in EXCUSED[field]}
+        warnings += [f"{i} (documented absence: {excused[allowed[i]]})"
+                     for i in issues if i in allowed]
+        issues = [i for i in issues if i not in allowed]
         rule(not issues, f"school: {name}" + (f" -> {'; '.join(issues)}" if issues else ""))
         lines.extend(f"WARN school: {name} -> {w}" for w in warnings)
 
