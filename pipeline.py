@@ -4,7 +4,8 @@ Yellow Slate 600-blog pipeline. The Google Sheet is the control center.
 
 Flow per keyword (Blogs tab Status column):
   new -> pick -> picked -> [Harshit ticks schools, sets approved] -> cms -> cms_done
-      -> write -> written -> qc -> qc_pass | qc_fail -> [Harshit reviews + publishes] -> published
+      -> write -> written -> qc -> qc_pass | qc_fail -> draft (unpublished, Live link set)
+      -> [Harshit reviews in their CMS + publishes] -> published
 
 Commands
 --------
@@ -14,6 +15,7 @@ Commands
   python pipeline.py cms    [--limit N] [--row KEYWORD]
   python pipeline.py write  [--limit N] [--row KEYWORD]
   python pipeline.py qc     [--limit N] [--row KEYWORD]
+  python pipeline.py draft  --row KEYWORD            unpublished draft in their CMS + edit link
   python pipeline.py names                       Semrush paste list (bare school names, 100 per batch)
   python pipeline.py volumes                     fill Vol from Semrush exports in data/semrush/
   python pipeline.py docx   [--row KEYWORD]       rebuild blog.docx (to share) from blog.md
@@ -310,6 +312,48 @@ def cmd_qc(sh, args):
         print(f"qc: {kw}: {'PASS' if passed else f'{len(fails)} issues'}")
 
 
+def cmd_draft(sh, args):
+    """Stage 5: create an UNPUBLISHED draft in their CMS for a QC-passed blog.
+
+    --row is required on purpose. This is the first command that writes to their live site,
+    and a bare `draft` that swept every qc_pass row is not a mistake worth making cheap.
+
+    Status is left at qc_pass: their API has no publish endpoint, so a draft is not a
+    published post, and the sheet's Status validation is strict about its eight values.
+    What records the draft is the Live link column, which holds the edit_url.
+    """
+    from clients.blog_base import BlogError, get_blog
+    from stages import draft as draft_stage
+
+    blogs_ws = sh.worksheet(sheet.BLOGS)
+    done = sheet.records(sh.worksheet(sheet.CMS))
+    blog_cms = get_blog()
+    for b in rows_in(sheet.records(blogs_ws), "qc_pass", args):
+        kw, folder = b["Keyword"].strip(), blog_folder(b)
+        meta_path = os.path.join(folder, "meta.json")
+        if not os.path.exists(meta_path):
+            sheet.set_blog(blogs_ws, b["_row"], error=f"draft: no meta.json in {folder}")
+            print(f"draft: {kw}: no meta.json, skipped")
+            continue
+        with open(meta_path, encoding="utf-8") as fh:
+            meta = json.load(fh)
+        schools = len([r for r in cms_rows(done, kw) if r["CMS ID"].strip()])
+        print(f"draft: {kw}")
+        try:
+            out = draft_stage.create(blog_cms, folder, meta, b["City"].strip(),
+                                     b["Area"].strip(), expect_schools=schools)
+        except BlogError as err:
+            sheet.set_blog(blogs_ws, b["_row"], error=f"draft: {err}"[:450])
+            print(f"  failed: {err}")
+            continue
+        sheet.set_blog(blogs_ws, b["_row"], error="", **{"Live link": out["edit_url"]})
+        print(f"  draft {out['id']} ({out['status']}), "
+              f"{out['linked_schools']} of {schools} schools linked")
+        for warning in out["warnings"]:
+            print(f"  check: {warning}")
+        print(f"  open: {out['edit_url']}")
+
+
 def cmd_docx(sh, args):
     """Rebuild blog.docx from blog.md, e.g. after hand edits. Any blog that has been written."""
     from stages import docx_export
@@ -455,6 +499,9 @@ def main():
     ap = sub.add_parser("approve", help="tick chosen schools and set the blog to approved")
     ap.add_argument("--row", action="append", default=[], required=True)
     ap.add_argument("--schools", required=True, help='e.g. "1-10" or "1-12 drop 4,7"')
+    dr = sub.add_parser("draft", help="create an unpublished draft in their CMS (qc_pass rows)")
+    dr.add_argument("--row", action="append", default=[], required=True,
+                    help="only this keyword (repeatable). Required: this writes to their site.")
     sub.add_parser("names", help="Semrush paste list of school names missing a volume")
     sub.add_parser("volumes", help="fill Vol from Semrush exports in data/semrush/")
     sub.add_parser("status")
@@ -463,7 +510,7 @@ def main():
     sh = sheet.open_sheet()
     {"setup": cmd_setup, "add": cmd_add, "pick": cmd_pick, "cms": cmd_cms,
      "write": cmd_write, "qc": cmd_qc, "status": cmd_status,
-     "names": cmd_names, "volumes": cmd_volumes, "docx": cmd_docx,
+     "names": cmd_names, "volumes": cmd_volumes, "docx": cmd_docx, "draft": cmd_draft,
      "show": cmd_show, "approve": cmd_approve, "setvol": cmd_setvol, "suggest": cmd_suggest}[args.cmd](sh, args)
 
 

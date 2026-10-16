@@ -58,12 +58,29 @@ class ApiBlog(Blog):
             raise BlogError(f"Draft create returned no id for slug {blog['slug']!r}: {body}")
 
         status = new.get("status", "draft")
+        made = bool(body.get("created", True)) if isinstance(body, dict) else True
         if status != "draft":
-            # Their docs say a post is always created as a draft and never published. If that
-            # ever changes, stop rather than quietly publishing 600 unreviewed blogs.
+            # Two very different things land here, and the difference decides what to do next.
+            #
+            # created: false means the slug was already taken, so this reply is somebody
+            # else's post handed back - a LIVE one, if status is published. Nothing new was
+            # made, but their endpoint is idempotent on the slug and their docs do not say
+            # whether it rewrites that post's content first, so a collision is worth naming
+            # loudly rather than reporting as "their API published my draft".
+            #
+            # created: true means they really did publish a fresh post, which breaks the
+            # promise this whole stage rests on. Stop either way.
+            if not made:
+                raise BlogError(
+                    f"The slug {blog['slug']!r} already belongs to a {status} post "
+                    f"(id {new.get('id')}). Nothing new was created. Their endpoint is "
+                    "idempotent on the slug, so pick a different slug rather than retrying, "
+                    "and check that live post: their docs do not say whether this call "
+                    "rewrote its content."
+                )
             raise BlogError(
-                f"Expected status 'draft' for {blog['slug']!r} but their API returned {status!r}. "
-                "Stopping: publishing is meant to stay manual."
+                f"Expected status 'draft' for {blog['slug']!r} but their API created it as "
+                f"{status!r}. Stopping: publishing is meant to stay manual."
             )
 
         return {
@@ -74,7 +91,7 @@ class ApiBlog(Blog):
             "edit_url": new.get("edit_url", ""),
             "linked_schools": int(new.get("linked_schools", 0) or 0),
             # False means this slug already had a draft, so a retried row did not double up
-            "created": bool(body.get("created", True)) if isinstance(body, dict) else True,
+            "created": made,
         }
 
     def upload_image(self, path, alt=""):

@@ -54,11 +54,37 @@ When it finishes, report one line per blog:
 - minutes and cost from `output/<slug>/run.json` (`duration_ms`, `total_cost_usd`)
 - anything in `output/<slug>/notes.md` a human must check before publishing (schools that could not be verified, conflicting fees, a live page already at the same URL)
 
-Then say where the files are: `output/<slug>/blog.docx` to share, `blog.md` as the source.
+Then send `output/<slug>/blog.docx` and go to step 5. Don't stop at "the files are here".
+
+## 5. Preview, then ask
+
+**`blog.docx` is a PREVIEW, not the delivery.** Every run ends with the preview in the
+user's hands and ONE question, then you stop:
+
+> Draft this into the CMS, or do you want changes first?
+
+Ask it even when QC passed, even when nothing looks wrong, and even when the user said
+"write N blogs" and you have written all N. Finishing the write is not finishing the job.
+
+**If they want changes** - edit `output/<slug>/blog.md`, rebuild the preview with
+`python pipeline.py docx --row "<kw>"`, send it again and ask again. Loop until they say
+draft it. Never run `draft` on a blog they have not just approved.
+
+**If they say draft it** - run `python pipeline.py draft --row "<kw>"` (one `--row` per
+approved blog). It uploads the images, converts the body to HTML with the shortcodes
+intact, and creates an UNPUBLISHED draft. Then report per blog:
+- the `edit_url`, so they can open it in their dashboard
+- how many schools their CMS linked, against how many the blog has
+- every `check:` line the command printed
+
+A QC FAIL is never offered for drafting. Say what failed and ask what to do.
 
 ## Rules
 
-- Never publish, never mark a row `published`. Publishing is manual.
+- `draft` is as far as the pipeline goes: it creates an UNPUBLISHED draft. Never publish,
+  never mark a row `published`. The last click is the user's, in their own dashboard.
+- Never run `draft` unless the user approved that blog in this conversation. It writes to
+  their live site.
 - Never change `.env` or `WRITE_MODEL` unless asked.
 - If a stage errors, the row keeps its status with an Error note. Show the error; rerunning the same stage retries only failures.
 - Semrush volumes are optional and manual (`names`, then `volumes`). Mention them only if the user asks.
