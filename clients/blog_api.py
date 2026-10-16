@@ -7,6 +7,23 @@ Two endpoints, same base URL and same key as the schools API:
 Both are drafts only. There is no publish endpoint, so the last click stays manual:
 create_draft returns edit_url, which opens that draft in their dashboard.
 
+Write-only from this side. Every GET on the pipeline base except /health and
+/schools/search is answered 401 INVALID_TOKEN by the CRM's own session auth, so nothing
+written here can be read back - no GET /blogs/{id}, asked for Oct 11 2026 and not built.
+
+What a 200 with created: false actually does, measured Oct 16 2026 on a throwaway slug:
+NOTHING. Their handler validates the request shape, looks up the slug, and on a hit returns
+the existing post straight away. The body sent with it is discarded, not stored. Two things
+prove it without a read-back route: linked_schools comes back only on a 201, because only
+the create branch parses the shortcodes; and city "Narnia", a 404 UNKNOWN_CITY on the
+create path, is answered 200 on an existing slug, so the city is never even resolved - no
+row is being written. Confirmed against their live site too: the published post this
+pipeline collided with on Oct 16 still serves Yellow Slate's own article, untouched.
+
+So the danger is not what it looked like. A slug collision does not rewrite their post; it
+silently throws OUR blog away while the call still looks like a success. stages/draft.py
+is what makes that loud.
+
 Order of use, per blog: every image is uploaded first, the returned URLs are substituted
 into the body, then the draft is created.
 
@@ -63,20 +80,20 @@ class ApiBlog(Blog):
             # Two very different things land here, and the difference decides what to do next.
             #
             # created: false means the slug was already taken, so this reply is somebody
-            # else's post handed back - a LIVE one, if status is published. Nothing new was
-            # made, but their endpoint is idempotent on the slug and their docs do not say
-            # whether it rewrites that post's content first, so a collision is worth naming
-            # loudly rather than reporting as "their API published my draft".
+            # else's post handed back - a LIVE one, if status is published. Measured Oct 16,
+            # 2026: the content sent is discarded, not stored, so that live post is intact.
+            # It is still a dead end, because this blog's body went nowhere.
             #
             # created: true means they really did publish a fresh post, which breaks the
             # promise this whole stage rests on. Stop either way.
             if not made:
                 raise BlogError(
                     f"The slug {blog['slug']!r} already belongs to a {status} post "
-                    f"(id {new.get('id')}). Nothing new was created. Their endpoint is "
-                    "idempotent on the slug, so pick a different slug rather than retrying, "
-                    "and check that live post: their docs do not say whether this call "
-                    "rewrote its content."
+                    f"(id {new.get('id')}). Nothing was created and nothing was stored: "
+                    "their endpoint returns the existing post and discards the body sent "
+                    "with it. Pick a different slug rather than retrying. stages/draft.py "
+                    "checks their public site for exactly this before posting, so reaching "
+                    "here means that check could not see the post."
                 )
             raise BlogError(
                 f"Expected status 'draft' for {blog['slug']!r} but their API created it as "
@@ -89,8 +106,13 @@ class ApiBlog(Blog):
             "slug": new.get("slug", blog["slug"]),
             "status": status,
             "edit_url": new.get("edit_url", ""),
-            "linked_schools": int(new.get("linked_schools", 0) or 0),
-            # False means this slug already had a draft, so a retried row did not double up
+            # None, not 0, when they did not report it. Measured Oct 16, 2026: the field is
+            # present only on a 201. An existing slug comes back without it, because only
+            # their create branch parses the shortcodes. Reading that absence as 0 made the
+            # stage warn "linked 0 schools, the blog has 11" on every repeat post.
+            "linked_schools": _count(new),
+            # False means this slug already had a post, so nothing new was made - AND the
+            # body sent with this call was thrown away. See stages/draft.py.
             "created": made,
         }
 
@@ -123,6 +145,21 @@ class ApiBlog(Blog):
             # A relative path silently breaks every image in the blog body, so refuse it here.
             raise BlogError(f"Upload of {os.path.basename(path)} returned no absolute URL: {body}")
         return {"id": new.get("id", ""), "url": url}
+
+
+def _count(new):
+    """Their linked_schools, or None when they did not report one.
+
+    Not reported and zero are different answers and only one of them is a broken shortcode,
+    so an absent field must not collapse into 0.
+    """
+    value = new.get("linked_schools")
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _check(payload):

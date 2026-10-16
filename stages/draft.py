@@ -19,15 +19,29 @@ Three things have to happen between blog.md and their API, and each one fails si
   3. THE COUNT. linked_schools in their reply is their own parser's count of the schools it
      linked. Short of the number the blog was built from, some shortcode did not take, and
      that is worth saying before a human publishes it.
+  4. THE SLUG. POST /blogs is idempotent on the slug, and that is worse than it sounds. A
+     slug that already has a post returns that post and DISCARDS the body sent with it -
+     measured Oct 16, 2026, see clients/blog_api.py. Nothing on their site changes and the
+     call still looks like a success. Hit that day with "best-cbse-schools-in-delhi", which
+     was already a live 18-school article of theirs.
 
-Rerunning is safe: POST /blogs is idempotent on the slug, so a retried row updates its own
-draft instead of making a second one.
+So rerunning is NOT safe in the way this stage used to claim. A retried row does not update
+its own draft; it quietly does nothing, and over 600 blogs that means no correction ever
+lands. Two things stop that here:
+
+  - check_slug_is_free looks the slug up on their public site BEFORE anything is sent, so a
+    collision with a published post of theirs costs nothing - not even an orphaned image in
+    their media bucket, which has no delete call either.
+  - a reply carrying created: false is raised as a failure, not logged as a warning. That is
+    the only signal an unpublished collision gives, and their API cannot be read back to
+    check what is on their side, so it has to be treated as "the body went nowhere".
 """
 
 import os
 import re
 import tempfile
 
+import config
 from clients.blog_base import BlogError
 
 # The shortcodes their CMS expands. Both carry double-quoted attributes.
@@ -36,6 +50,11 @@ SHORTCODE_IN_HTML = re.compile(r"\[(?:%s)[^\]]*\]" % "|".join(SHORTCODES))
 
 IMAGE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)\)")
 UPLOADABLE = {".jpg", ".jpeg", ".png"}
+
+# Where a published blog lives on their public site. Measured Oct 16, 2026.
+PUBLIC_BLOG = config.SITE + "/blog/%s"
+CANONICAL = re.compile(r"""<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)""", re.I)
+SITE_CHECK_TIMEOUT = 20
 
 
 def to_html(markdown_text):
@@ -97,12 +116,78 @@ def upload_images(blog, folder, markdown_text):
     return markdown_text, warnings
 
 
-def create(blog, folder, meta, city, area, expect_schools):
+def _get_page(url):
+    """One GET of their public site. Returns the HTML, or None for anything but a clean 200."""
+    import requests
+
+    response = requests.get(url, timeout=SITE_CHECK_TIMEOUT,
+                            headers={"User-Agent": "yellowslate-pipeline"})
+    return response.text if response.status_code == 200 else None
+
+
+def published_url(slug, fetch=None):
+    """The public URL of a LIVE post at this slug, "" when there is none, None when unknown.
+
+    Their pipeline API cannot answer this. Every GET on that base except /health and
+    /schools/search is answered 401 INVALID_TOKEN by the CRM's own session auth, so from
+    this side /blogs is write-only: a slug cannot be looked up before it is posted to, and
+    what was written cannot be read back. Their public site can answer it, with one trap -
+    an unknown slug is not a 404 there, it is their homepage served with status 200, byte
+    for byte the same page a nonsense slug gets. The one thing that separates a real post
+    from that fallback is the canonical link: a post points it at itself, the fallback
+    points it at /home.
+
+    None, not "", when the site could not be read, so a caller can report that it did not
+    look rather than reporting the slug free. Only a 200 carrying a canonical is judged;
+    every other reply is "unknown", which costs a warning and never a wrong refusal.
+    """
+    url = PUBLIC_BLOG % slug
+    try:
+        html = (fetch or _get_page)(url)
+    except Exception:                       # noqa: BLE001 - unreachable is unknown, not free
+        return None
+    found = CANONICAL.search(html or "")
+    if not found:
+        return None
+    # Compared on the path, so http/https or a trailing slash on their side cannot read as
+    # a different post.
+    return url if found.group(1).strip().rstrip("/").endswith("/blog/" + slug) else ""
+
+
+def check_slug_is_free(slug, fetch=None):
+    """Raise before a single byte is sent if this slug is already a live post of theirs.
+
+    This is the whole point of the stage's step 4. Without it the collision is only visible
+    in the reply, by which time the POST has landed, every image of this blog is already in
+    their media bucket, and the body has been thrown away for nothing.
+
+    Returns the warnings to carry forward, because "I looked and it is free" and "I could
+    not look" must not read the same in the run log.
+    """
+    live = published_url(slug, fetch=fetch)
+    if live:
+        raise BlogError(
+            f"The slug {slug!r} is already a published post on their site: {live}. "
+            "POST /blogs is idempotent on the slug, so sending this would hand that live "
+            "post back and discard this blog's body instead of making a new post. Nothing "
+            "was sent. Change the slug in this blog's meta.json - the Oct 16, 2026 fix was "
+            "to add the year - and rerun."
+        )
+    if live is None:
+        return [f"could not read {PUBLIC_BLOG % slug} to check the slug was free before "
+                "posting, so this ran on the created:false guard in clients/blog_api.py alone."]
+    return []
+
+
+def create(blog, folder, meta, city, area, expect_schools, fetch=None):
     """Upload the images, build the HTML and create the draft. Returns their reply + warnings.
 
     `expect_schools` is how many schools the blog was built from, which their linked_schools
     is checked against. It is a warning rather than a failure: the draft exists either way,
     and a human opens it next.
+
+    `fetch` replaces the one GET of their public site that the slug check makes, so a test
+    does not need the network.
     """
     path = os.path.join(folder, "blog.md")
     if not os.path.exists(path):
@@ -112,7 +197,12 @@ def create(blog, folder, meta, city, area, expect_schools):
     if not body.strip():
         raise BlogError(f"{path} is empty.")
 
-    body, warnings = upload_images(blog, folder, body)
+    # Before the uploads, not after: a slug collision that is caught later still leaves
+    # every image of this blog in their media bucket, and there is no delete call for those.
+    warnings = check_slug_is_free(meta["slug"], fetch=fetch)
+
+    body, image_warnings = upload_images(blog, folder, body)
+    warnings += image_warnings
     result = blog.create_draft({
         "title": meta["title"],
         "meta_title": meta.get("meta_title", ""),
@@ -123,13 +213,32 @@ def create(blog, folder, meta, city, area, expect_schools):
         "content": to_html(body),
     })
 
-    linked = int(result.get("linked_schools", 0) or 0)
-    if expect_schools and linked != expect_schools:
+    if not result.get("created", True):
+        # The slug check above only sees PUBLISHED posts, so an unpublished post of theirs
+        # on this slug - or a draft this row already made - gets this far. Either way the
+        # body just sent was discarded, so this is a failure and not the "the existing one
+        # was updated" it used to be reported as. A corrected blog re-drafted on its own
+        # slug would otherwise leave the old body on their site and still read as a success,
+        # which over 600 blogs means no correction ever lands.
+        raise BlogError(
+            f"The slug {meta['slug']!r} already had a post (id {result.get('id')}, status "
+            f"{result.get('status')}), so this blog's body was discarded: POST /blogs "
+            "returns the existing post and does not update it. Nothing on their site "
+            "changed. If that post is this row's own earlier draft, delete it in their "
+            f"dashboard and rerun ({result.get('edit_url', 'no edit_url in their reply')}). "
+            "If it is one of theirs, change the slug in meta.json and rerun."
+        )
+
+    linked = result.get("linked_schools")
+    if linked is None:
+        warnings.append(
+            "their reply carried no linked_schools, so the [btn_admissions] shortcodes "
+            "were not counted. Check the admission buttons in the draft by eye."
+        )
+    elif expect_schools and linked != expect_schools:
         warnings.append(
             f"their CMS linked {linked} schools, the blog has {expect_schools}. "
             "Check the [btn_admissions] shortcodes in the draft before publishing."
         )
-    if not result.get("created", True):
-        warnings.append("this slug already had a draft, so the existing one was updated.")
 
     return {**result, "warnings": warnings}

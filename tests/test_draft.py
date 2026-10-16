@@ -8,6 +8,9 @@ Three things here are easy to get wrong and invisible once published:
   - the body still points at images/x.jpg on this machine until every one is uploaded and
     swapped. A missed swap is a broken image on their site.
   - their media endpoint takes jpg and png only, and the writer sometimes saves .webp.
+  - the slug may already belong to a post of theirs, in which case POST /blogs hands that
+    post back and discards this blog's body - a call that looks like a success and changed
+    nothing. Measured Oct 16, 2026; see clients/blog_api.py.
 """
 
 import json
@@ -20,10 +23,14 @@ from stages import draft as draft_stage
 
 
 class FakeBlog:
-    """Stands in for clients/blog_api.py. Records what it was asked to do."""
+    """Stands in for clients/blog_api.py. Records what it was asked to do.
 
-    def __init__(self, linked=0):
-        self.uploaded, self.drafts, self.linked = [], [], linked
+    `created=False` is their reply to a slug that already has a post: the same id back, and
+    no linked_schools at all, because only their create branch parses the shortcodes.
+    """
+
+    def __init__(self, linked=0, created=True):
+        self.uploaded, self.drafts, self.linked, self.created = [], [], linked, created
 
     def upload_image(self, path, alt=""):
         assert os.path.splitext(path)[1].lower() in (".jpg", ".jpeg", ".png"), path
@@ -34,11 +41,29 @@ class FakeBlog:
         self.drafts.append(blog)
         return {"id": 51, "uuid": "u-51", "slug": blog["slug"], "status": "draft",
                 "edit_url": f"https://cms.example.com/blogs/51/edit",
-                "linked_schools": self.linked, "created": True}
+                "linked_schools": self.linked if self.created else None,
+                "created": self.created}
 
 
 META = {"title": "11 Best CBSE Schools in Delhi", "meta_title": "Best CBSE Schools in Delhi",
         "meta_description": "Fees, reviews and admission.", "slug": "best-cbse-schools-in-delhi"}
+
+# What their public site serves: a real post points its canonical at itself, and a slug with
+# no post gets the homepage at status 200 with the canonical pointing at /home.
+LIVE_PAGE = '<html><head><link rel="canonical" href="https://yellowslate.com/blog/%s"/></head></html>'
+FREE_PAGE = '<html><head><link rel="canonical" href="https://yellowslate.com/home"/></head></html>'
+
+
+@pytest.fixture(autouse=True)
+def never_touch_their_site(monkeypatch):
+    """No test here may reach yellowslate.com.
+
+    META's slug is a post Yellow Slate really has live, so without this the slug guard
+    would refuse every draft in this file - and a suite that depends on a third party's
+    site is a suite that fails on a train. Tests that care about the guard pass their own
+    `fetch` instead, which goes round this.
+    """
+    monkeypatch.setattr(draft_stage, "_get_page", lambda url: FREE_PAGE)
 
 
 @pytest.fixture
@@ -154,3 +179,111 @@ def test_a_shortcode_their_side_did_not_link_is_warned_about(folder):
 def test_a_blog_with_no_markdown_file_is_refused(folder):
     with pytest.raises(BlogError):
         draft_stage.create(FakeBlog(), folder, META, "Delhi", "Delhi", expect_schools=0)
+
+
+# ---- the slug guard -----------------------------------------------------------------
+#
+# Their pipeline API is write-only: every GET on it but /health and /schools/search is
+# answered 401 by the CRM's session auth. So a slug cannot be looked up through the API
+# before posting to it, and their public site is the only place that can answer.
+
+def test_a_published_post_is_recognised_by_its_canonical_link():
+    slug = "best-schools-in-kalkaji-delhi"
+    found = draft_stage.published_url(slug, fetch=lambda url: LIVE_PAGE % slug)
+    assert found == "https://yellowslate.com/blog/" + slug
+
+
+def test_the_homepage_fallback_reads_as_a_free_slug():
+    """A slug with no post is not a 404 on their site, it is the homepage at status 200.
+    Anything reading the status code would call every slug in the world taken."""
+    assert draft_stage.published_url("no-such-blog-9981", fetch=lambda url: FREE_PAGE) == ""
+
+
+def test_a_site_that_cannot_be_read_is_unknown_rather_than_free():
+    """"free" here would post on the strength of a check that never actually happened."""
+    def unreachable(url):
+        raise OSError("connection reset by peer")
+
+    assert draft_stage.published_url("a-slug", fetch=unreachable) is None
+    assert draft_stage.published_url("a-slug", fetch=lambda url: None) is None
+    assert draft_stage.published_url("a-slug", fetch=lambda url: "<html>no canonical</html>") is None
+
+
+def test_the_canonical_is_compared_on_the_path():
+    """So their canonical switching to http, or growing a trailing slash, does not read as a
+    different post and silently turn the guard off."""
+    page = '<link rel="canonical" href="http://yellowslate.com/blog/a-slug/">'
+    assert draft_stage.published_url("a-slug", fetch=lambda url: page)
+
+
+def test_a_slug_that_only_shares_a_prefix_is_not_a_collision():
+    """Re-slugging was the Oct 16, 2026 fix: "...-in-delhi" was live, "...-in-delhi-2026"
+    was free. If a prefix counted as a collision there would have been no way out."""
+    page = LIVE_PAGE % "best-cbse-schools-in-delhi"
+    assert draft_stage.published_url("best-cbse-schools-in-delhi-2026",
+                                     fetch=lambda url: page) == ""
+
+
+def test_a_live_post_refuses_before_a_single_image_is_uploaded(folder):
+    """The uploads happen first, and their media endpoint has no delete call either, so a
+    collision caught after them leaves this blog's images in their bucket for good."""
+    write_md(folder, "![A School](images/a-school.jpg)\n")
+    blog = FakeBlog(linked=1)
+    with pytest.raises(BlogError) as caught:
+        draft_stage.create(blog, folder, META, "Delhi", "Delhi", expect_schools=1,
+                           fetch=lambda url: LIVE_PAGE % META["slug"])
+    assert "published post" in str(caught.value)
+    assert blog.uploaded == [] and blog.drafts == []
+
+
+def test_a_slug_check_that_could_not_run_is_said_out_loud_but_does_not_stop_the_blog(folder):
+    """Their site being down must not stall a batch of 600. The reply still carries the
+    created:false guard. What the run log must not do is look like the slug was checked."""
+    write_md(folder, "Intro.\n")
+    blog = FakeBlog(linked=0)
+    out = draft_stage.create(blog, folder, META, "Delhi", "Delhi", expect_schools=0,
+                             fetch=lambda url: None)
+    assert any("could not read" in w for w in out["warnings"])
+    assert blog.drafts, "an unreadable site should not have stopped the draft"
+
+
+# ---- a slug that already has a post -------------------------------------------------
+
+def test_a_repeat_post_is_a_failure_because_the_body_is_discarded(folder):
+    """POST /blogs returns the post that already holds the slug and throws the body away.
+
+    This used to be a warning that read as success, which is the worse half of the problem:
+    a blog corrected and re-drafted on its own slug left the old body on their site, and
+    the sheet recorded a draft. Across 600 blogs no correction would ever have landed.
+    """
+    write_md(folder, "Intro.\n")
+    blog = FakeBlog(created=False)
+    with pytest.raises(BlogError) as caught:
+        draft_stage.create(blog, folder, META, "Delhi", "Delhi", expect_schools=0,
+                           fetch=lambda url: FREE_PAGE)
+    message = str(caught.value)
+    assert "discarded" in message
+    # The edit_url has to be in the message: deleting that draft is how the rerun works.
+    assert "/edit" in message
+
+
+def test_a_reply_with_no_count_is_not_read_as_zero_schools_linked(folder):
+    """Their API leaves linked_schools out rather than sending 0. Read as 0, it warned
+    "linked 0 schools, the blog has 11" about drafts that were perfectly fine."""
+    write_md(folder, '[btn_admissions id="9908"]\n')
+    blog = FakeBlog(linked=None)
+    out = draft_stage.create(blog, folder, META, "Delhi", "Delhi", expect_schools=1,
+                             fetch=lambda url: FREE_PAGE)
+    assert any("no linked_schools" in w for w in out["warnings"])
+    assert not any("linked 0" in w for w in out["warnings"])
+
+
+def test_not_counted_and_zero_stay_different_in_the_client():
+    """clients/blog_api.py reads their reply. Only one of these is a broken shortcode."""
+    from clients.blog_api import _count
+
+    assert _count({"id": 1}) is None, "an absent count must not collapse into 0"
+    assert _count({"id": 1, "linked_schools": None}) is None
+    assert _count({"id": 1, "linked_schools": 0}) == 0
+    assert _count({"id": 1, "linked_schools": "3"}) == 3
+    assert _count({"id": 1, "linked_schools": "lots"}) is None

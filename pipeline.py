@@ -347,8 +347,12 @@ def cmd_draft(sh, args):
             print(f"  failed: {err}")
             continue
         sheet.set_blog(blogs_ws, b["_row"], error="", **{"Live link": out["edit_url"]})
+        # None, not 0, when their reply left linked_schools out. The two must not print the
+        # same: one is a broken shortcode, the other is them not telling us.
+        linked = out["linked_schools"]
         print(f"  draft {out['id']} ({out['status']}), "
-              f"{out['linked_schools']} of {schools} schools linked")
+              + (f"{linked} of {schools} schools linked" if linked is not None
+                 else f"schools linked not reported (the blog has {schools})"))
         for warning in out["warnings"]:
             print(f"  check: {warning}")
         print(f"  open: {out['edit_url']}")

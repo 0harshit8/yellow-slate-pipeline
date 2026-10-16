@@ -16,7 +16,11 @@ class Blog:
         """blog: {"title", "meta_title", "meta_description", "slug", "city", "area", "content"}.
 
         Creates an UNPUBLISHED draft. Returns {"id", "slug", "status", "edit_url"}.
-        Idempotent on slug: a slug that already exists returns the existing draft, never a second one.
+
+        Idempotent on slug, in the narrow sense that a slug that already exists returns the
+        existing post and never a second one. It is not an update: measured Oct 16 2026,
+        the content sent with a repeat call is discarded. "created": False in the reply
+        therefore means "your body went nowhere", which stages/draft.py treats as a failure.
         """
         raise NotImplementedError
 

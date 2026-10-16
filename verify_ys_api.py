@@ -12,6 +12,7 @@ import os
 import sys
 
 import config
+from clients.blog_base import BlogError
 from clients.cms_base import CMSError
 from clients import ys_http
 
@@ -159,6 +160,46 @@ def main():
             return "a bad city raises and names the city"
         raise AssertionError("an unknown city should have raised")
 
+    from stages import draft as draft_stage
+
+    def the_blog_api_is_still_write_only():
+        """Everything about stage 5 rests on not being able to read a blog back. Watch for it.
+
+        Every GET on the pipeline base except /health and /schools/search falls through to
+        the CRM's own session auth and comes back 401 INVALID_TOKEN with a login redirect,
+        so nothing this pipeline writes can be verified through the API. Asked for as
+        GET /blogs/{id} on Oct 11, 2026 and not built.
+
+        The day they do build it, this check fails - and that is the good outcome: the
+        content a repeat post discards could then be proved rather than inferred, and
+        a_repeat_post_discards_the_body below should be rewritten to read it instead.
+        """
+        for path in ("blogs", "blogs/3128"):
+            try:
+                ys_http.call("GET", path)
+            except ys_http.YSApiError as exc:
+                assert exc.status == 401, f"GET {path} answered {exc.status}, not 401: {exc}"
+                continue
+            raise AssertionError(f"GET {path} succeeded - their API can be read back now")
+        return "GET /blogs and /blogs/{id} are still 401, so writes cannot be verified"
+
+    def a_published_slug_is_visible_before_posting():
+        """The only pre-POST collision check there is. If their URL shape moves, it goes blind.
+
+        On Oct 16, 2026 a blog was posted to "best-cbse-schools-in-delhi", which Yellow
+        Slate already had live. The collision was only visible in the reply, by which point
+        the call had landed and the blog's body had been thrown away.
+
+        The trap: a slug with no post is not a 404 on their site, it is their homepage with
+        status 200, byte for byte what a nonsense slug gets. Only the canonical link tells
+        the two apart.
+        """
+        taken = draft_stage.published_url("best-cbse-schools-in-delhi")
+        assert taken, "a known live post read as free, so the pre-POST slug guard is blind"
+        free = draft_stage.published_url("verify-no-such-blog-9981")
+        assert free == "", f"a slug with no post read as taken, every draft would refuse: {free!r}"
+        return f"live post seen at {taken}, an unused slug reads free"
+
     check("search: doc example (Kidzee Kalkaji)", doc_example)
     check("search: short forms expand on their side", short_form_expands)
     check("search: scoped to the area given", scoped_to_area)
@@ -171,11 +212,13 @@ def main():
     check("search: an unknown area is detectable", an_unknown_area_no_longer_scopes_the_search)
     check("search: a typo'd area does not misplace", a_typod_area_does_not_place_a_school_wrongly)
     check("search: unknown city raises", unknown_city_is_loud)
+    check("blogs: still write-only, no read-back", the_blog_api_is_still_write_only)
+    check("blogs: a published slug is visible first", a_published_slug_is_visible_before_posting)
 
     # ---- writes ------------------------------------------------------------
     if not args.write:
         for name in ("create school", "create school is idempotent", "upload image",
-                     "create draft", "create draft is idempotent",
+                     "create draft", "a repeat post discards the body",
                      "draft: empty meta is caught locally"):
             skip(name, "read-only run, pass --write to include it")
         return report()
@@ -241,25 +284,66 @@ def main():
         })
         draft.update(out)
         assert out["status"] == "draft", out
+        # The count is what proves their create branch read the body. The repeat-post check
+        # below turns on this field being present here and absent there.
+        assert out["linked_schools"] is not None, \
+            f"a 201 came back with no linked_schools, so the repeat-post check cannot tell "\
+            f"a create from a repeat any more: {out}"
         return (f"id {out['id']}  status {out['status']}  linked_schools {out['linked_schools']}\n"
                 f"       edit: {out['edit_url']}")
 
-    def draft_is_idempotent():
-        """Same slug twice must return the same draft. Batches get retried, so this will happen.
+    def a_repeat_post_discards_the_body():
+        """The same slug twice returns the same post - and throws the second body away.
 
-        meta_title and meta_description are sent in full: their API rejects either one empty
-        with a 400 that names neither field, which is not in their docs.
+        This check used to pass either way. It posted the same slug with different content
+        and asserted only the id and the created flag, so an API that overwrote and an API
+        that ignored the body looked identical through it, and nobody knew which Yellow
+        Slate's was until Oct 16, 2026.
+
+        The content itself still cannot be read back. What can be seen from outside is the
+        shape of their "already exists" branch, and these two things say it never reaches
+        the body at all:
+
+          - linked_schools comes back only on a 201. Their create branch parses the
+            [btn_admissions] shortcodes and counts them. The already-exists branch returns
+            the stored record and leaves the field out entirely, although the body sent
+            here carries a real school id that a create would have linked.
+          - an unknown city, which the create path refuses with 404 UNKNOWN_CITY, is
+            accepted. The city is never resolved, so no row is being written.
+
+        If either changes, their handler now touches the body on a repeat call, the
+        overwrite question is open again, and stages/draft.py is telling operators "nothing
+        on their site changed" when something did.
+
+        meta_title and meta_description are sent in full: their API rejects either one
+        empty with a 400 that names neither field, which is not in their docs.
         """
-        again = blog.create_draft({
+        school_id = created.get("id", 7713)
+        repeat = {
             "title": f"VERIFY Delete Me {stamp}",
             "meta_title": f"VERIFY Delete Me {stamp}",
-            "meta_description": "Second call, checking the slug is idempotent. Safe to delete.",
+            "meta_description": "Second call, checking a repeat post is not an update. Safe to delete.",
             "slug": slug, "city": "Delhi", "area": "Kalkaji",
-            "content": "<p>second call</p>",
-        })
+            "content": f'<p>second call</p><p>[btn_admissions id="{school_id}"]</p>',
+        }
+        again = blog.create_draft(repeat)
         assert again["id"] == draft["id"], f"second create made a new draft: {again}"
         assert again["created"] is False, f"expected created=false, got {again}"
-        return f"same id {again['id']}, created=False"
+        assert again["linked_schools"] is None, (
+            f"their repeat reply counted {again['linked_schools']} linked schools, so it "
+            "parsed the body this time. It may now be storing it: re-measure before "
+            "trusting stages/draft.py's failure message."
+        )
+
+        # A city their CMS has never heard of. On the create path this is UnknownPlace.
+        try:
+            blog.create_draft(dict(repeat, city="Narnia"))
+        except BlogError as exc:
+            raise AssertionError(
+                "a repeat post with an unknown city was refused, so their handler now "
+                f"resolves the city before returning - which a pure lookup would not: {exc}"
+            ) from exc
+        return "same id, created=False, no linked_schools, an unknown city accepted"
 
     def empty_meta_is_caught_before_the_api():
         """The guard must fire locally, so a 600-blog batch names the row and the field."""
@@ -276,7 +360,7 @@ def main():
 
     check("upload image", upload_image)
     check("create draft", create_draft)
-    check("create draft is idempotent", draft_is_idempotent)
+    check("a repeat post discards the body", a_repeat_post_discards_the_body)
     check("draft: empty meta is caught locally", empty_meta_is_caught_before_the_api)
 
     return report(cleanup=(created, draft))
