@@ -101,6 +101,66 @@ def usable(city, area):
     return bool(area) and not is_city_area(city, area)
 
 
+# Address short forms, for comparing two spellings of one locality only. Not for output.
+AREA_SHORT = {"rd": "road", "ext": "extension", "extn": "extension", "enc": "enclave",
+              "sec": "sector", "gdn": "garden", "gdns": "gardens", "apt": "apartments"}
+
+
+def _key(area, city):
+    """A comparison key for two spellings of one locality. Never an answer in itself.
+
+    Their CMS and a competitor page write the same place differently: "R.K. Puram" against
+    "R. K. Puram", "Mathura Road" against "Mathura Rd". This drops punctuation and expands
+    the few address short forms, so the two compare equal.
+
+    It is only ever a key. What goes back to them is their own string, because they match an
+    area on the exact characters, and because their spellings follow no rule worth guessing
+    at - the point here is to RECOGNISE their spelling, never to correct it.
+    """
+    words = re.sub(r"[^a-z0-9]+", " ", clean(area, city).lower()).split()
+    return " ".join(AREA_SHORT.get(w, w) for w in words)
+
+
+def same_place(a, b, city=""):
+    """True when two strings name one locality, however each of them spells it.
+
+    Their CMS matches an area on the exact characters, so one locality can sit in it under
+    two spellings at once: measured Oct 16, 2026, Delhi has BOTH "R. K. Puram" (three Delhi
+    Public School rows) and "R.K. Puram" (empty). Comparing the raw text makes the empty twin
+    look like a real locality with no school in it - a new campus - and the answer to that is
+    a duplicate row. Comparing the key makes them one place, which is what they are.
+    """
+    ka, kb = _key(a, city), _key(b, city)
+    return bool(ka) and ka == kb
+
+
+def _as_they_spell_it(area, among, city):
+    """Their exact string for a locality, when they file it behind a prefix. "" otherwise.
+
+    Some of their areas carry the campus in front of the locality: "South Campus,South Moti
+    Bagh", "Todermal Road Area,Mandi House". A competitor page writes the locality alone, so
+    the two never match on the raw text even though they are the same place. clean() reduces
+    their string to the same locality, which is what makes them comparable.
+
+    What goes back is THEIR string, never the page's. Their CMS matches an area on the exact
+    characters, so sending the bare locality would be an area they do not have: since their
+    Oct 11, 2026 update that is ignored rather than refused, the search widens to the whole
+    city and comes back just as ambiguous as it started. See [the typo trap in] the module
+    docstring.
+
+    Only consulted when `among` is given, and only after the plain match has failed, so this
+    can turn an unresolved school into a placed one and can never change an existing answer.
+    """
+    want = _key(area, city)
+    if not want:
+        return ""
+    for theirs in among:
+        theirs = (theirs or "").strip()
+        if theirs and usable(city, theirs) and _key(theirs, city) == want:
+            return theirs
+    return ""
+
+
 def resolve(school, city, candidate, blog_area="", lookup=True, among=()):
     """Returns (area, note). An empty area means unresolved: the caller skips that school.
 
@@ -124,6 +184,10 @@ def resolve(school, city, candidate, blog_area="", lookup=True, among=()):
     from_pages = clean(candidate, city)
     if ok(from_pages):
         return from_pages, "from the pages"
+
+    spelt = _as_they_spell_it(from_pages, among, city)
+    if spelt:
+        return spelt, "from the pages, as their CMS spells it"
 
     if not from_pages:
         from_keyword = clean(blog_area, city)

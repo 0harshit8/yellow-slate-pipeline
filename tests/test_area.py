@@ -126,6 +126,48 @@ def test_among_matches_regardless_of_case(no_lookup):
     assert got == "kalkaji"
 
 
+def test_among_matches_their_prefixed_area_spelling(no_lookup):
+    """Their CMS files some localities behind a prefix: "South Campus,South Moti Bagh".
+
+    The pages give the locality on its own, and clean() cuts their string down to the same
+    locality, so the two do match - but only after cleaning. What goes back is THEIR string,
+    because their CMS matches an area on the exact characters and the plain locality would
+    be ignored as an area they do not have.
+    """
+    got, note = area_stage.resolve("Springdales School", "Delhi", "South Moti Bagh",
+                                   among=["Dhaula Kuan", "South Campus,South Moti Bagh"])
+    assert got == "South Campus,South Moti Bagh"
+    assert "pages" in note
+
+
+def test_among_matches_an_abbreviated_area(no_lookup):
+    """Their CMS holds "Mathura Rd"; every competitor page writes "Mathura Road"."""
+    got, _ = area_stage.resolve("Delhi Public School", "Delhi", "Mathura Road",
+                                among=["Vasant Kunj", "Mathura Rd"])
+    assert got == "Mathura Rd"
+
+
+def test_among_matches_across_punctuation(no_lookup):
+    """"R.K. Puram" and "R. K. Puram" are one place written two ways."""
+    got, _ = area_stage.resolve("Delhi Public School", "Delhi", "R.K. Puram",
+                                among=["Dwarka", "R. K. Puram"])
+    assert got == "R. K. Puram"
+
+
+def test_two_numbered_blocks_are_not_the_same_locality(no_lookup):
+    """Greater Kailash and Greater Kailash 1 are different places, so the digit must count."""
+    got, _ = area_stage.resolve("Bluebells", "Delhi", "Greater Kailash 2",
+                                among=["Greater Kailash", "Greater Kailash 1"])
+    assert got == ""
+
+
+def test_a_prefixed_candidate_still_has_to_be_the_same_locality(no_lookup):
+    """Matching on the cleaned form must not become a way in for an unrelated area."""
+    got, _ = area_stage.resolve("Kidzee", "Delhi", "Saket",
+                                among=["South Campus,South Moti Bagh"])
+    assert got == ""
+
+
 # ---- merge carries the locality -------------------------------------------------------------
 
 def test_merge_carries_the_locality_onto_the_school():

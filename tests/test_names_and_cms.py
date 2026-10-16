@@ -143,6 +143,53 @@ def test_a_shared_name_with_no_locality_is_dropped_not_duplicated(cms):
     assert len(cms.schools) == 2
 
 
+def test_one_locality_spelt_two_ways_is_not_a_second_campus(tmp_path, monkeypatch):
+    """Their CMS holds "R. K. Puram" (with the schools) and "R.K. Puram" (empty) at once.
+
+    Measured against their live CMS on Oct 16, 2026: area_exists says yes to both. Reading
+    the empty twin as a real locality with no school of this name in it is the exact shape
+    of "a campus they do not have", and acting on it adds a duplicate to a CMS that already
+    had three rows for this school.
+    """
+    import config
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
+    cms = FakeCMS(path=str(tmp_path / "fake.json"),
+                  areas=["R. K. Puram", "R.K. Puram", "Dwarka"])
+    first = ensure_school(cms, "Delhi Public School", "Delhi", "R. K. Puram")
+    again = ensure_school(cms, "Delhi Public School", "Delhi", "R.K. Puram")
+    assert again["id"] == first["id"]
+    assert again["created"] is False
+    assert len(cms.schools) == 1
+
+
+def test_two_numbered_blocks_are_still_two_campuses(tmp_path, monkeypatch):
+    """The spelling rule must not swallow a real difference: GK and GK 1 are not one place."""
+    import config
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
+    cms = FakeCMS(path=str(tmp_path / "fake.json"),
+                  areas=["Greater Kailash", "Greater Kailash 1"])
+    a = ensure_school(cms, "Bluebells School", "Delhi", "Greater Kailash")
+    b = ensure_school(cms, "Bluebells School", "Delhi", "Greater Kailash 1")
+    assert a["id"] != b["id"]
+    assert len(cms.schools) == 2
+
+
+def test_a_locality_that_cannot_scope_their_search_drops_one_school(cms):
+    """A second search that comes back ambiguous must skip the school, not stop the batch.
+
+    The locality is real enough to pass resolve() and unknown to their CMS, so the repeat
+    search is handed an area they ignore and widens right back to the whole city - the same
+    ambiguous answer as before. That is one school nobody can place, which UnplaceableSchool
+    exists for. Letting the raw AmbiguousSchool out instead killed a whole run of eleven
+    schools over one spelling.
+    """
+    ensure_school(cms, "Kidzee", "Delhi", "Dwarka")
+    ensure_school(cms, "Kidzee", "Delhi", "Kalkaji")
+    with pytest.raises(UnplaceableSchool):
+        ensure_school(cms, "Kidzee", "Delhi", "Mandi House")
+    assert len(cms.schools) == 2
+
+
 def test_an_incomplete_cms_row_is_dropped_not_published(cms):
     """Their row 8010 has area null and slug "/dav-public-school-": a dead profile link.
 

@@ -65,7 +65,17 @@ def ensure_school(cms, school, city, page_area="", blog_area=""):
             area, why = area_stage.resolve(school, city, page_area, blog_area=blog_area)
             if not area:
                 raise UnplaceableSchool(f"{school}: {why}") from exc
-        found = cms.search_school(school, city, area)
+        try:
+            found = cms.search_school(school, city, area)
+        except AmbiguousSchool as again:
+            # The locality got past resolve() and still did not scope their search, so it is
+            # not one they hold: they ignored it and handed back the whole city, ambiguous
+            # exactly as before. Nothing else here can choose between those rows, so this is
+            # one school that cannot be placed - which is a skip, not a dead batch. Letting
+            # the raw AmbiguousSchool through lost ten good schools over one spelling.
+            raise UnplaceableSchool(
+                f"{school}: {area!r} ({why}) is not a locality their CMS holds, so the "
+                f"search widened back to the city: {again}") from again
         note = f"shared name, placed in {area} {why}"
         if found and found.get("area_matched") is False:
             # the locality is not one of theirs, so that hit is just the city-wide match
@@ -143,7 +153,10 @@ def _same_campus(cms, school, city, page_area, found):
     """
     wanted = area_stage.clean(page_area, city)
     theirs = (found.get("area") or "").strip()
-    if not wanted or not theirs or wanted.lower() == theirs.lower():
+    # Two spellings of one locality are one place, not two campuses. Their CMS splits a
+    # locality whenever the characters differ, so raw text here turns the empty half of a
+    # split into "a real place with no school in it" and creates a duplicate under it.
+    if not wanted or not theirs or area_stage.same_place(wanted, theirs, city):
         return found, ""
     if not area_stage.usable(city, wanted):
         return found, ""
