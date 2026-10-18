@@ -64,6 +64,22 @@ def _norm(name):
     return re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
 
 
+def slug_links(slug):
+    """The two [read_more_blogs] targets a school's CMS slug allows.
+
+    The slug their API returns is "<city>/<school-name>-<locality>", and both table links are
+    built straight from it. profile_url() in clients/cms_base.py already does this for the
+    first bullet, which is why those links were always right.
+    """
+    s = str(slug).strip().strip("/")
+    return (f"/school/{s}", f"/{s}-reviews")
+
+
+def _link_key(link):
+    """A read_more_blogs link as it compares: no trailing slash, no case, no spaces."""
+    return str(link).strip().rstrip("/").lower()
+
+
 def absences(notes):
     """{normalised school name: {"fee"|"reviews": reason}} from notes.md.
 
@@ -150,8 +166,12 @@ def _substance(section, least=8):
     return words(FALLBACK.sub("", section)) >= least
 
 
-def check_school(name, text, folder):
-    """Returns (issues, warnings). Issues fail QC, warnings only go in qc.txt."""
+def check_school(name, text, folder, slug=None):
+    """Returns (issues, warnings). Issues fail QC, warnings only go in qc.txt.
+
+    `slug` is this school's CMS slug, when the run knows it. Both [read_more_blogs] links in
+    the info table have to be built from it; see slug_links().
+    """
     issues, warnings = [], []
     btn = BTN.search(text)
     if not btn:
@@ -202,11 +222,29 @@ def check_school(name, text, folder):
         issues.append("fee section has no amount")
     elif "source:" not in fee.lower():
         issues.append("fee table has no Source: line")
+
+    # The two table links, against this school's CMS slug. The writer was told to build them
+    # from the school's name, which drops the locality the real slug ends in, so all 16 links
+    # in the Hyderabad blog pointed at pages that do not exist -- and an unknown slug on their
+    # site answers 200 with the homepage, so nothing about them looked broken. String
+    # comparison only: QC never goes near the network.
+    if slug:
+        want = [_link_key(l) for l in slug_links(slug)]
+        wrong = sorted({l for l in READ_MORE.findall(text) if _link_key(l) not in want})
+        if wrong:
+            issues.append(f"read_more_blogs link not built from the CMS slug '{slug}': "
+                          f"{wrong}, expected {list(slug_links(slug))}")
     return issues, warnings
 
 
-def check_blog(md, keyword, expected_ids=None, folder=None, meta=None, notes=None):
-    """Returns (passed, [lines]). Lines are 'PASS ...', 'FAIL ...' or 'WARN ...' (warnings never fail)."""
+def check_blog(md, keyword, expected_ids=None, folder=None, meta=None, notes=None,
+               expected_slugs=None):
+    """Returns (passed, [lines]). Lines are 'PASS ...', 'FAIL ...' or 'WARN ...' (warnings never fail).
+
+    `expected_slugs` is {CMS name: CMS slug} from the CMS tab, the same rows expected_ids comes
+    from. It gates the [read_more_blogs] links, both per school and over the whole post, so a
+    link built from the school's name instead of its slug cannot ship again.
+    """
     lines, kw = [], keyword.lower()
 
     def rule(ok, msg):
@@ -236,8 +274,9 @@ def check_blog(md, keyword, expected_ids=None, folder=None, meta=None, notes=Non
                 f" -> meta says {', '.join(str(c) for c in wrong)}, the post has {len(blocks)}"
                 if wrong else ""))
     declared = absences(notes)
+    slugs = {_norm(k): v for k, v in (expected_slugs or {}).items() if str(v).strip()}
     for name, text in blocks:
-        issues, warnings = check_school(name, text, folder)
+        issues, warnings = check_school(name, text, folder, slugs.get(_norm(name)))
         # An absence this school declared stops being a failure and becomes a warning
         # carrying its reason, so the human reviewing qc_pass sees what was tried.
         excused = declared.get(_norm(name), {})
@@ -275,6 +314,16 @@ def check_blog(md, keyword, expected_ids=None, folder=None, meta=None, notes=Non
     rule(not bad, "no Edustoke/Ezyschooling hyperlinks")
     bad_links = [l for l in READ_MORE.findall(md) if l != l.lower() or re.search(r"[\s_]", l)]
     rule(not bad_links, "read_more_blogs links lowercase-hyphenated" + (f" -> {bad_links}" if bad_links else ""))
+    # Over the whole post as well as per school. The per-school rule above only fires when the
+    # H2 name matches a CMS name, and a writer that spells the H2 its own way would slip past
+    # it with every link dead. Here nothing has to match: a read_more_blogs link that is not
+    # one of the run's slug links is wrong whichever section it sits in.
+    if expected_slugs:
+        allowed = {_link_key(l) for v in expected_slugs.values() if str(v).strip()
+                   for l in slug_links(v)}
+        stray = sorted({l for l in READ_MORE.findall(md) if _link_key(l) not in allowed})
+        rule(not stray, "read_more_blogs links match a CMS slug"
+             + (f" -> {stray} is no school's /school/<slug> or /<slug>-reviews" if stray else ""))
     naked = re.findall(r"(?<![(\"])\bhttps?://\S+", re.sub(r"\[[^\]]*\]\([^)]*\)|\[\w+[^\]]*\]", "", md))
     rule(not naked, "no naked URLs" + (f" -> {naked[:3]}" if naked else ""))
 

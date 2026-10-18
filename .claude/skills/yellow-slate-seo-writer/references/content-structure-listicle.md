@@ -87,8 +87,8 @@ Two-column table with **two header columns**: `Detail` and `Information`. Always
 | Curriculum | [e.g., CBSE, IB PYP, IB MYP, IB DP, IGCSE] |
 | Grades | [e.g., Pre-Nursery to Grade 12] |
 | Location | [Full address with pin code] |
-| Know More About School | [read_more_blogs link="/school/[city]/[school-name-hyphenated]" text="Detailed Information"] |
-| School Review | [read_more_blogs link="/[city]/[school-name-hyphenated]-reviews" text="Read Parent Reviews"] |
+| Know More About School | [read_more_blogs link="/school/[cms-slug]" text="Detailed Information"] |
+| School Review | [read_more_blogs link="/[cms-slug]-reviews" text="Read Parent Reviews"] |
 | Facilities | [Key facilities — only if data available] |
 ```
 
@@ -98,9 +98,20 @@ Two-column table with **two header columns**: `Detail` and `Information`. Always
 - Do not add extra columns or merge rows.
 
 **Link format rules for `[read_more_blogs]`:**
-- "Know More" → `/school/[city]/[school-name-hyphenated]`
-- "Reviews" → `/[city]/[school-name-hyphenated]-reviews`
-- Lowercase, hyphenated names.
+
+Both links are built from the school's **CMS slug**, which is given to you per school in the
+run (the same value the profile URL in the first bullet is built from). Its shape is
+`<city>/<school-name>-<locality>`, for example `hyderabad/kendriya-vidyalaya-kanchan-bagh`.
+
+- "Know More" → `/school/<cms slug>`
+- "Reviews" → `/<cms slug>-reviews`
+- **Copy the CMS slug exactly. Never rebuild it from the school's name.** The slug ends in the
+  school's locality, and a slug you assemble yourself leaves that locality out.
+- A link without the locality does **not** 404. `yellowslate.com` serves the homepage with
+  HTTP 200 for any unknown slug, so a dead link looks fine in a browser and fails silently for
+  every reader. Eight schools in the Hyderabad blog shipped with sixteen links like
+  `/school/hyderabad/kendriya-vidyalaya` - all dead, none visibly broken.
+- The slug is already lowercase and hyphenated. Don't re-case it or add spaces or underscores.
 
 ### LLM Summary Line (mandatory — place after info table, before Parent Review)
 

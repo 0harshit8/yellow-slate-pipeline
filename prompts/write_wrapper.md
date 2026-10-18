@@ -8,7 +8,16 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
    - Blog URL slug: {slug}
    - Schools, in this order:
 {schools}
-2. **School URLs and IDs are given above (Step 2.5).** Use them exactly. Don't look these schools up in schools.csv and don't ask which branch. The admissions shortcode for each school is `[btn_admissions id="<CMS ID>"]` and the first bullet links the school name to its profile URL. For internal links (Step 2.7), web-search `site:yellowslate.com/blog` — **don't open
+2. **School URLs, slugs and IDs are given above (Step 2.5).** Use them exactly. Don't look these schools up in schools.csv and don't ask which branch. The admissions shortcode for each school is `[btn_admissions id="<CMS ID>"]` and the first bullet links the school name to its profile URL.
+   The info table's two `[read_more_blogs]` links are built from that school's **CMS slug**,
+   copied character for character from the list above:
+   `[read_more_blogs link="/school/<CMS slug>" text="Detailed Information"]` and
+   `[read_more_blogs link="/<CMS slug>-reviews" text="Read Parent Reviews"]`.
+   **Never rebuild the slug from the school's name.** The slug ends in the school's locality
+   (`hyderabad/kendriya-vidyalaya-kanchan-bagh`), a name-derived one does not, and an unknown
+   slug on yellowslate.com returns the homepage at HTTP 200 instead of a 404 -- so a dead link
+   looks perfectly fine. The Hyderabad blog shipped 16 of them that way. QC fails any
+   `[read_more_blogs]` link that does not match the CMS slug given for that school. For internal links (Step 2.7), web-search `site:yellowslate.com/blog` — **don't open
    schools.csv at all.** It is a 5 MB file, and the search is both cheaper and more current.
    Those one or two searches are the only web work you do yourself; everything else is the
    researchers' job.

@@ -17,7 +17,8 @@ Each section lists data from official sources.
 | Detail | Information |
 | --- | --- |
 | Board | CBSE |
-| Know More | [read_more_blogs link="/school/delhi/delhi-public-school-kalkaji" text="Know More"] |
+| Know More About School | [read_more_blogs link="/school/delhi/delhi-public-school-kalkaji-kalkaji" text="Detailed Information"] |
+| School Review | [read_more_blogs link="/delhi/delhi-public-school-kalkaji-kalkaji-reviews" text="Read Parent Reviews"] |
 
 Delhi Public School Kalkaji is a CBSE school in Kalkaji offering Nursery to 12.
 

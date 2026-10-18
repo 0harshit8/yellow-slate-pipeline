@@ -294,7 +294,12 @@ def cmd_qc(sh, args):
             continue
         with open(blog, encoding="utf-8") as fh:
             md = fh.read()
-        ids = [r["CMS ID"] for r in cms_rows(done, kw) if r["CMS ID"].strip()]
+        rows = cms_rows(done, kw)
+        ids = [r["CMS ID"] for r in rows if r["CMS ID"].strip()]
+        # The CMS slug per school, for the [read_more_blogs] links. They are built from it and
+        # used to be rebuilt from the school's name instead, which drops the locality the slug
+        # ends in and points every link at a page that does not exist.
+        slugs = {r["CMS name"]: r["CMS slug"] for r in rows if r["CMS slug"].strip()}
         meta_path = os.path.join(folder, "meta.json")
         meta = json.load(open(meta_path, encoding="utf-8")) if os.path.exists(meta_path) else {}
         # notes.md carries the researcher's record of what it tried. A fee or a review
@@ -303,7 +308,7 @@ def cmd_qc(sh, args):
         notes_path = os.path.join(folder, "notes.md")
         notes = open(notes_path, encoding="utf-8").read() if os.path.exists(notes_path) else ""
         passed, lines = qc_stage.check_blog(md, kw, expected_ids=ids, folder=folder, meta=meta,
-                                            notes=notes)
+                                            notes=notes, expected_slugs=slugs)
         with open(os.path.join(folder, "qc.txt"), "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + "\n")
         fails = [l for l in lines if l.startswith("FAIL")]

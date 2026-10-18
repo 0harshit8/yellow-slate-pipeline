@@ -175,11 +175,13 @@ source is enough for objective registry data (UDISE, SARAS). If sources conflict
 most authoritative and note the conflict in `notes.md`.
 
 ### 2.5 School URL & ID Lookup
-Each school's CMS ID and profile URL are given to you with the run. Use them exactly —
-don't look the school up anywhere else and don't ask which branch, because the ID already
-names one.
+Each school's CMS ID, CMS slug and profile URL are given to you with the run. Use them
+exactly — don't look the school up anywhere else and don't ask which branch, because the ID
+already names one.
 - **Profile URL** → hyperlink the school name in bullet #1
 - **CMS ID** → the ID for `[btn_admissions id="XXX"]`
+- **CMS slug** → the two `[read_more_blogs]` links in the info table: `/school/<cms slug>`
+  and `/<cms slug>-reviews`. Copy it; never rebuild it from the school's name.
 
 Working outside the pipeline, read both from the Yellow Slate CMS. There is no local school
 list: the old `references/schools.csv` is gone, and the CMS is current where the file was not.
@@ -288,9 +290,17 @@ fallback.
 | `[sponsored id="URL1,URL2,URL3"]` | Sponsored video embeds | Within/after parent review section |
 
 **`[read_more_blogs]` link format rules:**
-- "Know More" links: `/school/[city]/[school-name-hyphenated]`
-- "Reviews" links: `/[city]/[school-name-hyphenated]-reviews`
-- Replace `[city]` and `[school-name]` with specific, lowercase, hyphenated names.
+
+Both links come from the school's **CMS slug**, given to you per school in the run. Shape:
+`<city>/<school-name>-<locality>`, e.g. `hyderabad/kendriya-vidyalaya-kanchan-bagh`. It is the
+same value the first bullet's profile URL is built from.
+
+- "Know More" links: `/school/<cms slug>`
+- "Reviews" links: `/<cms slug>-reviews`
+- **Copy the CMS slug exactly; never rebuild it from the school's name.** The slug ends in the
+  locality, and a name-derived slug drops it.
+- Dropping the locality does not 404. An unknown slug on `yellowslate.com` returns the homepage
+  at HTTP 200, so the link looks alive and silently goes nowhere.
 
 ---
 
@@ -337,7 +347,8 @@ fallback.
 - **FAQ-style headings**: FAQ section handles this — don't force question headings elsewhere.
 - **Sources**: Embed as contextual hyperlinks (never "click here" or naked URLs). Paraphrase — never quote.
 - **Internal links**: 3–5 from sitemap, flowing naturally with descriptive anchor text.
-- Use `[read_more_blogs]` shortcode format for all internal links within school info tables.
+- Use `[read_more_blogs]` shortcode format for all internal links within school info tables,
+  with the link built from the school's CMS slug (see the shortcode reference).
 
 ---
 
@@ -355,7 +366,8 @@ Before delivering the final post, verify ALL of these:
 - [ ] School image downloaded from official website and embedded as local file, placed after intro bullets, before info table
 - [ ] School info table: two-column with `Detail` and `Information` headers, consistent row order
 - [ ] Fee structure table: one row per class/grade — classes never merged even if fees are identical
-- [ ] `[read_more_blogs]` links use correct lowercase hyphenated format
+- [ ] `[read_more_blogs]` links built from each school's CMS slug (locality included):
+      `/school/<cms slug>` and `/<cms slug>-reviews`, never rebuilt from the school name
 - [ ] Parent review: 4–6 bullets with percentage data per school
 - [ ] Parent review opening line is consistent throughout blog
 - [ ] Parent review graph present for every school — pastel colours, consistent structure

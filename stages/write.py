@@ -77,8 +77,15 @@ def build_prompt(keyword, city, area, slug, schools, ratings=None):
         n = ratings.get(_key(s.get("page_name") or s["name"]), 0)
         return str(n) if n else "NONE"
 
+    # The CMS slug as well as the finished profile URL. The writer builds two
+    # [read_more_blogs] links per school from the slug, and it used to be given only the
+    # profile URL -- so it rebuilt the slug from the school's name, dropped the locality the
+    # real slug ends in, and the Hyderabad blog shipped 16 links like
+    # /school/hyderabad/kendriya-vidyalaya. An unknown slug on their site returns the
+    # homepage at HTTP 200, so not one of them looked broken.
     lines = "\n".join(
         f"     {i}. {s['name']} | Locality: {s.get('area') or area} | CMS ID: {s['id']}"
+        f" | CMS slug: {str(s['slug']).strip('/')}"
         f" | Profile URL: {profile_url(s['slug'])} | Directory ratings: {seen(s)}"
         for i, s in enumerate(schools, 1)
     )

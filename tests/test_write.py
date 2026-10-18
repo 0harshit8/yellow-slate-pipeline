@@ -59,3 +59,17 @@ def test_pick_ratings_keeps_the_highest_for_a_repeated_name(tmp_path):
         {"name": "Chinmaya Vidyalaya", "reviews": 210},
         {"name": "Chinmaya Vidyalaya", "reviews": 0}]), encoding="utf-8")
     assert write.pick_ratings(str(folder)) == {"chinmaya vidyalaya": 210}
+
+
+def test_prompt_carries_the_raw_cms_slug():
+    """The writer builds two [read_more_blogs] links per school from the CMS slug. It used to
+    be given only the finished profile URL, so it rebuilt the slug from the school's name,
+    dropped the locality the real slug ends in, and the Hyderabad blog shipped 16 links to
+    pages that do not exist. An unknown slug on their site answers 200 with the homepage,
+    so none of them looked broken."""
+    schools = [{"name": "Kendriya Vidyalaya", "id": "1", "slug": "hyderabad/kendriya-vidyalaya-kanchan-bagh",
+                "area": "Kanchan Bagh", "page_name": "Kendriya Vidyalaya"}]
+    prompt = write.build_prompt("best schools in hyderabad", "Hyderabad", "Hyderabad",
+                                "best-schools-in-hyderabad", schools)
+    assert "CMS slug: hyderabad/kendriya-vidyalaya-kanchan-bagh" in prompt
+    assert "Profile URL: https://yellowslate.com/hyderabad/kendriya-vidyalaya-kanchan-bagh" in prompt

@@ -62,7 +62,8 @@ def test_missing_graph_and_external_image_fail():
 
 
 def test_uppercase_read_more_link_fails():
-    md = load().replace('link="/school/delhi/delhi-public-school-kalkaji"', 'link="/school/Delhi/DPS Kalkaji"')
+    md = load().replace('link="/school/delhi/delhi-public-school-kalkaji-kalkaji"',
+                        'link="/school/Delhi/DPS Kalkaji"')
     passed, lines = check_blog(md, KW)
     assert any("read_more_blogs" in l for l in fails(lines))
 
@@ -265,3 +266,93 @@ def test_documented_absence_does_not_excuse_other_schools_rules():
     passed, lines = check_blog(md, KW, notes=ABSENCES)
     assert not passed
     assert any("empty btn_admissions id" in l for l in fails(lines))
+
+
+# --------------------------------------------------------------------------- #
+# [read_more_blogs] links have to be built from the school's CMS slug. The skill used to
+# tell the writer to build them from the school's name ("/school/[city]/[school-name]"),
+# which drops the locality the real slug ends in. All 16 links in the Hyderabad blog
+# (Oct 2026) pointed at pages that do not exist -- and because an unknown slug on
+# yellowslate.com answers 200 with the homepage rather than 404, not one of them looked
+# broken. This is a string comparison against the CMS tab; QC never hits the network.
+
+SLUGS = {"Delhi Public School Kalkaji": "delhi/delhi-public-school-kalkaji-kalkaji",
+         "Bal Bharati Public School Kalkaji": "delhi/bal-bharati-public-school-kalkaji-kalkaji"}
+
+
+def arealess(md):
+    """The links the old convention produced: the school's name without its locality."""
+    return md.replace("delhi-public-school-kalkaji-kalkaji", "delhi-public-school-kalkaji")
+
+
+def test_links_built_from_the_cms_slug_pass():
+    passed, lines = check_blog(load(), KW, expected_ids=["900001", "900002"], expected_slugs=SLUGS)
+    assert passed, fails(lines)
+
+
+def test_arealess_read_more_links_fail():
+    passed, lines = check_blog(arealess(load()), KW, expected_slugs=SLUGS)
+    assert not passed
+    f = " ".join(fails(lines))
+    assert "not built from the CMS slug" in f
+    assert "/school/delhi/delhi-public-school-kalkaji" in f
+
+
+def test_only_the_reviews_link_wrong_still_fails():
+    """The two links are built separately, so one can be right while the other is not."""
+    md = load().replace('link="/delhi/delhi-public-school-kalkaji-kalkaji-reviews"',
+                        'link="/delhi/delhi-public-school-kalkaji-reviews"')
+    passed, lines = check_blog(md, KW, expected_slugs=SLUGS)
+    assert not passed
+    assert any("not built from the CMS slug" in l for l in fails(lines))
+
+
+def test_another_schools_slug_is_not_this_schools():
+    """Both links resolve, so the lowercase-hyphenated rule and the whole-post rule both
+    pass. Only the per-school comparison catches a link pointing at the wrong school."""
+    md = load().replace('link="/school/delhi/delhi-public-school-kalkaji-kalkaji"',
+                        'link="/school/delhi/bal-bharati-public-school-kalkaji-kalkaji"')
+    passed, lines = check_blog(md, KW, expected_slugs=SLUGS)
+    assert not passed
+    assert any("not built from the CMS slug" in l for l in fails(lines))
+
+
+def test_a_stray_link_fails_even_when_the_h2_name_does_not_match_the_cms():
+    """The per-school rule can only fire when the H2 name matches a CMS name. A writer that
+    spells the H2 its own way would slip past it with every link dead, so the whole post is
+    checked against the run's slugs as well."""
+    slugs = {"DPS Kalkaji (Main Branch)": "delhi/delhi-public-school-kalkaji-kalkaji",
+             "BBPS Kalkaji": "delhi/bal-bharati-public-school-kalkaji-kalkaji"}
+    passed, lines = check_blog(arealess(load()), KW, expected_slugs=slugs)
+    assert not passed
+    assert any("no school's" in l for l in fails(lines))
+
+
+def test_links_are_not_checked_when_no_slugs_are_given():
+    """A blog QC'd without the CMS tab must not start failing on a rule it has no data for."""
+    passed, lines = check_blog(arealess(load()), KW, expected_ids=["900001", "900002"])
+    assert passed, fails(lines)
+    assert not any("CMS slug" in l for l in lines)
+
+
+def test_a_trailing_slash_is_not_a_failure():
+    md = load().replace('link="/school/delhi/delhi-public-school-kalkaji-kalkaji"',
+                        'link="/school/delhi/delhi-public-school-kalkaji-kalkaji/"')
+    passed, lines = check_blog(md, KW, expected_slugs=SLUGS)
+    assert passed, fails(lines)
+
+
+def test_slug_links_shape():
+    from stages.qc import slug_links
+    assert slug_links("hyderabad/kendriya-vidyalaya-kanchan-bagh") == (
+        "/school/hyderabad/kendriya-vidyalaya-kanchan-bagh",
+        "/hyderabad/kendriya-vidyalaya-kanchan-bagh-reviews")
+    assert slug_links("/hyderabad/x-y/") == ("/school/hyderabad/x-y", "/hyderabad/x-y-reviews")
+
+
+def test_a_documented_absence_does_not_excuse_a_dead_link():
+    """The escape names fee and reviews. A dead link is not research, it is a typo."""
+    passed, lines = check_blog(arealess(no_fee_amount(load())), KW, notes=ABSENCES,
+                               expected_slugs=SLUGS)
+    assert not passed
+    assert any("not built from the CMS slug" in l for l in fails(lines))
