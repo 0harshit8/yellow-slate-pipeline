@@ -9,7 +9,7 @@ import time
 import config
 from clients import claude_cli
 from clients.cms_base import profile_url
-from stages import assets, docx_export, qc
+from stages import assets, docx_export, qc, research
 
 # No shell: images and graphs are done by stages/assets.py after the run.
 # Agent spawns the school-researcher subagents (.claude/agents/school-researcher.md), which keep
@@ -91,7 +91,8 @@ def build_prompt(keyword, city, area, slug, schools, ratings=None):
     )
     return config.read_prompt("write_wrapper.md").format(
         keyword=keyword, city=city, area=area, slug=slug, schools=lines,
-        budget=f"{qc.word_budget(len(schools)):,}", out_dir=out_dir(slug).replace("\\", "/"))
+        budget=f"{qc.word_budget(len(schools)):,}", out_dir=out_dir(slug).replace("\\", "/"),
+        research_dir=research.SHEET_DIR)
 
 
 def clear_previous(folder):
@@ -128,7 +129,12 @@ def write_blog(keyword, city, area, slug, schools):
         raise claude_cli.ClaudeError(f"no blog.md written. Claude said: {result[:300]}")
     if result.upper().startswith("FAILED"):
         raise claude_cli.ClaudeError(result[:300])
-    problems = assets.process(folder)
+    # The fact sheets, before the assets: a blog that reached this line is already safe, and
+    # keeping the research is the one step in this stage that can still be done after a
+    # partial run. research.collect never raises, so a malformed sheet costs a printed
+    # problem and nothing more.
+    problems = research.collect(folder, schools)
+    problems += assets.process(folder)
     try:
         docx_export.export(folder)
     except PermissionError as err:

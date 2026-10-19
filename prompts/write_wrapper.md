@@ -53,8 +53,23 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
    becomes readable once the first response has started, so firing all twelve at once means none
    of them can read it and all twelve are charged in full. One, then groups of three or four.
 
-   **What to do with what comes back.** Each fact sheet ends with `GAPS` and `CONFLICTS`. Copy
-   both into notes.md verbatim. Then:
+   **Save every fact sheet the moment it comes back.** Before you use a sheet for anything,
+   write it to `{out_dir}/{research_dir}/<CMS ID>.md` — **copied verbatim**, character for
+   character, exactly the text the subagent returned, with every `| source: <url>` suffix left
+   on its field. One file per school, named with that school's CMS ID and nothing else.
+   **Do not** summarise it, reformat it, reorder it, translate it into prose, drop the fields
+   you are not going to print, or put two schools in one file. Use the `Write` tool with the
+   sheet as the file body.
+   This is not bookkeeping. A sheet carries the school's medium of instruction, co-ed status,
+   board, grade range and full postal address, and their CRM needs exactly those to make a
+   school's page public — schools this pipeline creates start out unverified and have no page
+   at all until a human fills that form. The blog prints two of those fields, so when the sheet
+   is not saved the rest is gone for good: on 2026-10-19, 30 created schools had a medium on
+   record for none of them, although every researcher had been asked for it. Saving the sheet
+   costs you one `Write` call and saves that research. A sheet you paraphrase is a sheet lost.
+
+   **Then, what to do with what comes back.** Each fact sheet ends with `GAPS` and `CONFLICTS`.
+   Copy both into notes.md verbatim. Then:
    - A field marked `OMIT` or `NOT_FOUND` -> **omit that table row.** Don't fill it with a
      fallback sentence, and don't go looking yourself — the researcher already spent its budget.
    - `FEES` with an annual figure and `FEES_NOTE` saying class-wise isn't published -> publish
@@ -125,6 +140,9 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
    - `{out_dir}/meta.json` with keys `title`, `meta_title`, `meta_description`, `slug` (use the slug given above; primary keyword in title and meta_title).
    - `{out_dir}/assets.json` as above.
    - `{out_dir}/notes.md`: a short list of missing data, conflicting sources and anything a human should check before publishing.
+   - `{out_dir}/{research_dir}/<CMS ID>.md` for **every** school — the researcher's fact sheet
+     copied verbatim, as step 4 says. A run that writes blog.md and no sheets is an incomplete
+     run even if the blog is perfect.
 8. **Only read files in the skill folder and in `{out_dir}`.** Don't open, list or search other folders under `output/` or `data/`: they hold other blogs and old runs, and copying from them mixes up schools.
 9. Run the skill's quality checklist yourself before finishing (images and graphs excepted, the pipeline adds them).
 
