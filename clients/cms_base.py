@@ -8,12 +8,19 @@ class CMSError(RuntimeError):
 
 
 class CMS:
-    def search_school(self, name, city, area=""):
+    def search_school(self, name, city, area="", campus=""):
         """Return {"id", "name", "slug", "area"} for an existing school, or None.
 
         Area is optional and only narrows a name shared by several schools - their API has
         searched by name + city since Oct 11, 2026. The "area" in the answer is the one the
         CMS holds for that school, which is not always the one that was asked for.
+
+        "campus" is the locality the pages put the school in, and it is never sent as an
+        area. It is appended to the NAME, and only after a search on the name alone comes
+        back empty, because some of their rows carry the campus in their own name and are
+        invisible to the plain name: "Glendale Academy" misses "Glendale Academy - Sun City
+        Campus" even inside that row's own area. A hit found this way carries
+        "campus_in_name": True, and its area is one no page mentioned.
 
         Raises AmbiguousSchool when the name matches several schools and the area cannot
         separate them, so that None keeps its one meaning: nothing here, safe to create.

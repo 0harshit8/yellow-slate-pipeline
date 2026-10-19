@@ -56,7 +56,7 @@ class FakeCMS(CMS):
         return any(s["city"].lower() == city.strip().lower()
                    and s["area"].lower() == area.lower() for s in self.schools)
 
-    def search_school(self, name, city, area=""):
+    def search_school(self, name, city, area="", campus=""):
         """Name + city, narrowed by area only when one is given. See CMS.search_school.
 
         An area the store does not have is IGNORED rather than applied, and reported with
@@ -64,8 +64,12 @@ class FakeCMS(CMS):
         Filtering on it instead would make a typo look like "no school there" in fake mode
         and like "here is a school across the city" in real mode, and the code that tells
         those apart would only ever be exercised against production.
+
+        The campus rung is mirrored for the same reason: a row whose own name carries the
+        locality is invisible to a search on the plain name both here and there, and the
+        measurement that proved it is in ApiCMS._by_campus_name.
         """
-        from clients.cms_api import AmbiguousSchool
+        from clients.cms_api import AmbiguousSchool, CANDIDATE_CAP
 
         scoped = bool(area) and self.area_exists(city, area)
         hits = []
@@ -78,13 +82,13 @@ class FakeCMS(CMS):
             if score >= MERGE_THRESHOLD:
                 hits.append((score, s))
         if not hits:
-            return None
+            return self._by_campus_name(name, city, campus)
 
         top = max(score for score, _ in hits)
         joint = [s for score, s in hits if score == top]
         if len(joint) > 1 and len({s["area"].lower() for s in joint}) > 1:
             pool = [{"id": s["id"], "name": s["name"], "slug": s["slug"], "area": s["area"],
-                     "score": top} for s in joint]
+                     "score": top} for s in joint][:CANDIDATE_CAP]
             raise AmbiguousSchool(
                 f"{name!r} matches {len(pool)} schools in {city}, and no area to choose with: "
                 + ", ".join(f"{s['area']} (id {s['id']})" for s in pool[:6]), pool)
@@ -94,6 +98,28 @@ class FakeCMS(CMS):
                 "area": best["area"], "score": top, "matched_on": name,
                 "review": top < 1.0,
                 "area_matched": scoped if area else None}
+
+    def _by_campus_name(self, name, city, campus):
+        """The plain name found nothing, so try it with the locality appended, city-wide.
+
+        Mirrors ApiCMS._by_campus_name, flags included: never scoped to an area, and the hit
+        is taken only when the row's own name carries the locality.
+        """
+        from clients.cms_api import _campus_candidates, names_the_place
+
+        for candidate in _campus_candidates(name, campus):
+            hits = [(similar(candidate, s["name"], places=(city, s["area"])), s)
+                    for s in self.schools if s["city"].lower() == city.lower()
+                    and names_the_place(s["name"], campus)]
+            hits = [(score, s) for score, s in hits if score >= MERGE_THRESHOLD]
+            if not hits:
+                continue
+            top = max(score for score, _ in hits)
+            best = min((s for score, s in hits if score == top), key=lambda s: s["id"])
+            return {"id": best["id"], "name": best["name"], "slug": best["slug"],
+                    "area": best["area"], "score": top, "matched_on": candidate,
+                    "review": True, "area_matched": None, "campus_in_name": True}
+        return None
 
     def create_school(self, name, city, area, email):
         if any(s["email"] == email for s in self.schools):

@@ -232,6 +232,161 @@ def test_spelling_variants_still_match(cms):
     assert a["id"] == b["id"] and c["id"] == d["id"]
 
 
+# ---- schools their CMS already had live, measured Oct 19, 2026 -------------------------------
+#
+# Three schools this pipeline "created" were already in their CMS, live, and the search missed
+# them two different ways. Every one of them cost a row with Verified = No, which has no public
+# page at all, so the blog carried a dead link and their team has to delete the row by hand.
+# There is no delete call on the pipeline API, so these are the expensive mistake to prevent.
+
+
+def _their_row(cms, **row):
+    """Put a row of THEIRS in the store: a real id, their spelling, their slug."""
+    cms.schools.append({"email": f"theirs-{row['id']}@example.com",
+                        "verified": True, "claimed": False, **row})
+    return row["id"]
+
+
+@pytest.mark.parametrize("name, their_name, their_id", [
+    ("Deepalaya School", "DEEPALAYA SCHOOL", 15236),
+    ("Sri Satya Sai Vidya Vihar School", "Sri Satya Sai Vidya Vihar School", 21497),
+])
+def test_their_area_is_an_address_not_a_locality(tmp_path, monkeypatch, name, their_name, their_id):
+    """Both of these were created although their CMS held them, because of one area string.
+
+    Their rows 15236 and 21497 both sit in "Kalkaji Extension, Block A 10,Govindpuri" while
+    every competitor page says "Kalkaji". The city-wide search found them. This stage then
+    read that string as a different locality, searched Kalkaji, found nothing there, and
+    concluded Kalkaji was a campus they do not have - so 23229 and 23231 were created.
+
+    Their own search is no help: an area is matched on the exact characters, so even
+    "Kalkaji Extension" comes back area_matched false. The comparison has to happen here.
+    """
+    import config
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
+    cms = FakeCMS(path=str(tmp_path / "fake.json"),
+                  areas=["Kalkaji", "Kalkaji Extension, Block A 10,Govindpuri"])
+    _their_row(cms, id=their_id, name=their_name, city="Delhi",
+               area="Kalkaji Extension, Block A 10,Govindpuri",
+               slug="delhi/" + their_name.lower().replace(" ", "-") + "-kalkaji-extension")
+
+    got = ensure_school(cms, name, "Delhi", "Kalkaji")
+    assert got["id"] == their_id, "their live row, not a second one"
+    assert got["created"] is False
+    assert got["area"] == "Kalkaji Extension, Block A 10,Govindpuri", "record THEIR area"
+    assert len(cms.schools) == 1
+
+
+def test_a_campus_suffix_in_their_name_is_found_before_creating(tmp_path, monkeypatch):
+    """Their 714 is "Glendale Academy - Sun City Campus", filed under "Rajendranagar mandal".
+
+    Measured against their live API: "Glendale Academy" in Hyderabad returns not_found even
+    when the search is scoped to that row's own area, because the suffix costs it too much
+    score. "Glendale Academy Sun City" returns it at 0.875. So the plain name could not see
+    a school that was already there and 23236 was created.
+
+    The locality the pages gave has to go into the NAME to reach it. Their area is one no
+    page mentioned, so the match is flagged for review rather than taken quietly.
+    """
+    import config
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
+    cms = FakeCMS(path=str(tmp_path / "fake.json"),
+                  areas=["Sun City", "Rajendranagar mandal"])
+    _their_row(cms, id=714, name="Glendale Academy - Sun City Campus", city="Hyderabad",
+               area="Rajendranagar mandal",
+               slug="hyderabad/glendale-academy-sun-city-campus-rajendranagar-mandal")
+
+    got = ensure_school(cms, "Glendale Academy", "Hyderabad", "Sun City")
+    assert got["id"] == 714, "their live row, not a second one"
+    assert got["created"] is False
+    assert got["review"] is True, "their area is one no page named, so a human should see it"
+    assert len(cms.schools) == 1
+
+
+def test_a_locality_in_their_name_is_not_enough_on_its_own(tmp_path, monkeypatch):
+    """The campus rung must not hand back a school whose name does not name that campus.
+
+    Appending the locality to the name is a loose search on purpose, so the row it finds has
+    to carry the locality in its own name - that is the only thing that makes it a campus row
+    rather than a good score. Without the check, any chain row in the city would do.
+    """
+    import config
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
+    cms = FakeCMS(path=str(tmp_path / "fake.json"), areas=["Sun City", "Kondapur"])
+    _their_row(cms, id=963, name="Glendale Academy", city="Hyderabad", area="Kondapur",
+               slug="hyderabad/glendale-academy-kondapur")
+
+    got = ensure_school(cms, "Glendale Academy", "Hyderabad", "Sun City")
+    assert got["created"] is True, "Kondapur is a different campus, so Sun City is new"
+    assert got["id"] != 963
+    assert got["review"] is True, "they hold this name elsewhere, so say so"
+    assert "Kondapur" in got["note"]
+
+
+def test_two_real_schools_of_one_name_stay_two_schools(tmp_path, monkeypatch):
+    """The Kolar pair that any rule here has to survive: 23209 and 23228.
+
+    "JSS Public School" in Nehru Extention and "JSS Public School" in Malur are two different
+    schools, both correctly created. Nothing about the new area comparison or the campus rung
+    may fold them into one.
+    """
+    import config
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
+    cms = FakeCMS(path=str(tmp_path / "fake.json"), areas=["Nehru Extention", "Malur"])
+
+    nehru = ensure_school(cms, "JSS Public School", "Kolar", "Nehru Extention")
+    malur = ensure_school(cms, "JSS Public School", "Kolar", "Malur")
+    assert nehru["id"] != malur["id"]
+    assert nehru["area"] == "Nehru Extention" and malur["area"] == "Malur"
+    assert len(cms.schools) == 2
+
+
+def test_a_full_candidate_list_stops_a_create_instead_of_guessing(tmp_path, monkeypatch):
+    """Their candidate list stops at five, so a FULL list is a cut-off list.
+
+    Measured Oct 19, 2026: "Delhi Public School" in Delhi returns exactly 5 candidates and
+    their CMS plainly holds more, and "Oakridge International School" in Hyderabad returns 5.
+    So a locality missing from a full list is not a locality they do not have, it is one this
+    search cannot see - and creating on that is how 23238 Oakridge International School
+    (Manikonda) was added against five existing rows. One school reported beats a duplicate
+    published, so the school is skipped with their areas named.
+    """
+    import config
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
+    theirs = ["Bowrampet", "Bachupally", "Gachibowli", "Khajaguda", "Kondapur"]
+    cms = FakeCMS(path=str(tmp_path / "fake.json"), areas=theirs + ["Manikonda"])
+    for i, area in enumerate(theirs):
+        _their_row(cms, id=600 + i, name="Oakridge International School", city="Hyderabad",
+                   area=area, slug=f"hyderabad/oakridge-international-school-{area.lower()}")
+
+    with pytest.raises(UnplaceableSchool) as caught:
+        ensure_school(cms, "Oakridge International School", "Hyderabad", "Manikonda")
+    assert "Manikonda" in str(caught.value)
+    assert "Area column" in str(caught.value)
+    assert len(cms.schools) == 5, "nothing created"
+
+
+def test_a_short_candidate_list_is_the_whole_set_so_a_new_campus_is_still_created(tmp_path, monkeypatch):
+    """The cap rule must not stop a genuine new campus of a chain they only partly hold.
+
+    Four rows back for "Guru Harkrishan Public School" is the complete set, so a locality
+    none of them is in really is a campus they do not have. Refusing these would drop good
+    schools out of blogs for no reason, which is the mistake the old area gate made.
+    """
+    import config
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
+    theirs = ["Mayapuri", "Greater Kailash", "Shahdara", "Anand Vihar"]
+    cms = FakeCMS(path=str(tmp_path / "fake.json"), areas=theirs + ["Kalkaji"])
+    for i, area in enumerate(theirs):
+        _their_row(cms, id=15000 + i, name="Guru Harkrishan Public School", city="Delhi",
+                   area=area, slug=f"delhi/guru-harkrishan-public-school-{area.lower()}")
+
+    got = ensure_school(cms, "Guru Harkrishan Public School", "Delhi", "Kalkaji")
+    assert got["created"] is True
+    assert got["area"] == "Kalkaji"
+    assert len(cms.schools) == 5
+
+
 def test_merge_keeps_different_schools_apart():
     out = merge({"a": ["DAV Public School", "Kalka Public School"], "b": ["Kalka Public School"]})
     assert len(out) == 2

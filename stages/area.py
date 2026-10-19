@@ -61,16 +61,20 @@ DROP_WORDS = {"india", "uttar pradesh", "up", "delhi ncr", "ncr", "maharashtra",
 STREET_PART = re.compile(r"(?i)^(plot|flat|house|h\.?\s*no|no\.?|shop|khasra|survey|\d+[a-z]?)\b")
 
 
-def clean(area, city=""):
-    """'Vibhuti Khand, Gomti Nagar, Lucknow 226010' -> 'Gomti Nagar'. Locality only.
+def places_in(area, city=""):
+    """Every place name inside an area string, in the order written. Street junk dropped.
 
-    Pages write the locality as anything from a bare name to a full postal address, so this
-    throws away everything that is not a locality and keeps the last part standing. "Sector 62"
-    survives, "Plot 5" does not.
+    clean() keeps the last of these, because a page writes an address outward-in and the
+    locality is the most specific place in it. Comparing two area strings needs all of them,
+    because THEIR area field is not a page address and follows no such order. Measured
+    against their live CMS on Oct 19, 2026: row 15236 holds "Kalkaji Extension, Block A
+    10,Govindpuri", locality first and the block in the middle, while 12912 holds
+    "Bikshapathi Nagar,Hafeezpet" and another row "South Campus,South Moti Bagh", locality
+    last.
     """
     text = (area or "").strip()
     if not text:
-        return ""
+        return []
     text = re.sub(r"\b\d{6}\b", "", text)                  # pin code
     text = re.sub(r"(?i)\b(near|opp\.?|opposite|behind)\b.*$", "", text)
 
@@ -83,13 +87,21 @@ def clean(area, city=""):
             continue
         if STREET_PART.match(part) and not re.match(r"(?i)^sector\b", part):
             continue
-        keep.append(part)
-    if not keep:
-        return ""
+        part = re.sub(r"(?i)\b(sector)\s*-\s*(\d+)", r"\1 \2", part)
+        keep.append(re.sub(r"\s+", " ", part).strip(" -,"))
+    return [part for part in keep if part]
 
+
+def clean(area, city=""):
+    """'Vibhuti Khand, Gomti Nagar, Lucknow 226010' -> 'Gomti Nagar'. Locality only.
+
+    Pages write the locality as anything from a bare name to a full postal address, so this
+    throws away everything that is not a locality and keeps the last part standing. "Sector 62"
+    survives, "Plot 5" does not.
+    """
     # the locality is the most specific place name left, which is the last one
-    text = re.sub(r"(?i)\b(sector)\s*-\s*(\d+)", r"\1 \2", keep[-1])
-    return re.sub(r"\s+", " ", text).strip(" -,")
+    parts = places_in(area, city)
+    return parts[-1] if parts else ""
 
 
 def usable(city, area):
@@ -106,8 +118,8 @@ AREA_SHORT = {"rd": "road", "ext": "extension", "extn": "extension", "enc": "enc
               "sec": "sector", "gdn": "garden", "gdns": "gardens", "apt": "apartments"}
 
 
-def _key(area, city):
-    """A comparison key for two spellings of one locality. Never an answer in itself.
+def _key_of(place):
+    """One place name reduced to a comparison key. Never an answer in itself.
 
     Their CMS and a competitor page write the same place differently: "R.K. Puram" against
     "R. K. Puram", "Mathura Road" against "Mathura Rd". This drops punctuation and expands
@@ -117,8 +129,40 @@ def _key(area, city):
     area on the exact characters, and because their spellings follow no rule worth guessing
     at - the point here is to RECOGNISE their spelling, never to correct it.
     """
-    words = re.sub(r"[^a-z0-9]+", " ", clean(area, city).lower()).split()
+    words = re.sub(r"[^a-z0-9]+", " ", (place or "").lower()).split()
     return " ".join(AREA_SHORT.get(w, w) for w in words)
+
+
+def _key(area, city):
+    """The comparison key for the one locality in an area string."""
+    return _key_of(clean(area, city))
+
+
+def _keys(area, city=""):
+    """A key for every place name in an area string, because their field holds all of them."""
+    return [key for key in (_key_of(p) for p in places_in(area, city)) if key]
+
+
+def _one_place(a, b):
+    """True when two place keys name one place: the same words, or a plainer form of them.
+
+    The plainer form is what their area field needs, because it writes a locality out
+    further than a page does. Measured Oct 19, 2026: their 15236 is "Kalkaji Extension, ..."
+    where every page says "Kalkaji", and reading those as two places is what created the
+    duplicate row. So one key being the start of the other is one place.
+
+    A trailing NUMBER is the exception, and not a small one: "Greater Kailash" and "Greater
+    Kailash 1" are different localities, as are "Dwarka" and "Dwarka Sector 7". A number is
+    how these cities name a block, so an extra word carrying a digit means the two strings
+    are about different blocks rather than one place written out further.
+    """
+    wa, wb = a.split(), b.split()
+    if not wa or not wb:
+        return False
+    short, longer = (wa, wb) if len(wa) <= len(wb) else (wb, wa)
+    if longer[:len(short)] != short:
+        return False
+    return not any(ch.isdigit() for word in longer[len(short):] for ch in word)
 
 
 def same_place(a, b, city=""):
@@ -129,9 +173,19 @@ def same_place(a, b, city=""):
     Public School rows) and "R.K. Puram" (empty). Comparing the raw text makes the empty twin
     look like a real locality with no school in it - a new campus - and the answer to that is
     a duplicate row. Comparing the key makes them one place, which is what they are.
+
+    Widened on Oct 19, 2026, after their CMS turned out to hold the same school twice over
+    exactly this comparison. Their area field is an address, not a locality: 15236 DEEPALAYA
+    SCHOOL sits in "Kalkaji Extension, Block A 10,Govindpuri" and 21497 Sri Satya Sai Vidya
+    Vihar School in the same string, while every page says "Kalkaji". Both halves of the old
+    comparison were too narrow for that - it read only the LAST place name in each string,
+    and it demanded the two be equal. So this now compares every place name in one string
+    against every place name in the other, and counts one key as a plainer form of the
+    other. Their own area search cannot help here: it matches the exact characters and
+    nothing shorter, so scoping to "Kalkaji Extension" comes back area_matched false even
+    though "Kalkaji Extension, Block A 10,Govindpuri" is one of their areas.
     """
-    ka, kb = _key(a, city), _key(b, city)
-    return bool(ka) and ka == kb
+    return any(_one_place(ka, kb) for ka in _keys(a, city) for kb in _keys(b, city))
 
 
 def _as_they_spell_it(area, among, city):
@@ -151,12 +205,11 @@ def _as_they_spell_it(area, among, city):
     Only consulted when `among` is given, and only after the plain match has failed, so this
     can turn an unresolved school into a placed one and can never change an existing answer.
     """
-    want = _key(area, city)
-    if not want:
+    if not _key(area, city):
         return ""
     for theirs in among:
         theirs = (theirs or "").strip()
-        if theirs and usable(city, theirs) and _key(theirs, city) == want:
+        if theirs and usable(city, theirs) and same_place(theirs, area, city):
             return theirs
     return ""
 
