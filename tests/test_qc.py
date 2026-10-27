@@ -356,3 +356,23 @@ def test_a_documented_absence_does_not_excuse_a_dead_link():
                                expected_slugs=SLUGS)
     assert not passed
     assert any("not built from the CMS slug" in l for l in fails(lines))
+
+
+# Three "DAV Public School" rows shared one CMS name in the Bhubaneswar blog (Oct 2026).
+# Keyed by name alone, two slugs overwrote each other and their correct links were reported
+# as pointing at pages that do not exist, failing a blog whose links were right.
+def test_campuses_sharing_a_cms_name_keep_every_slug():
+    slugs = {"Delhi Public School Kalkaji": ["delhi/delhi-public-school-kalkaji-kalkaji",
+                                             "delhi/delhi-public-school-kalkaji-other"],
+             "Bal Bharati Public School Kalkaji": "delhi/bal-bharati-public-school-kalkaji-kalkaji"}
+    passed, lines = check_blog(load(), KW, expected_slugs=slugs)
+    assert passed, fails(lines)
+
+
+def test_a_stray_link_still_fails_when_a_name_holds_several_slugs():
+    slugs = {"Delhi Public School Kalkaji": ["delhi/delhi-public-school-kalkaji-kalkaji",
+                                             "delhi/delhi-public-school-kalkaji-other"],
+             "Bal Bharati Public School Kalkaji": "delhi/bal-bharati-public-school-kalkaji-kalkaji"}
+    passed, lines = check_blog(arealess(load()), KW, expected_slugs=slugs)
+    assert not passed
+    assert any("no school's" in l for l in fails(lines))

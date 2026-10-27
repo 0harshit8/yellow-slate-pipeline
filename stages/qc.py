@@ -80,6 +80,19 @@ def _link_key(link):
     return str(link).strip().rstrip("/").lower()
 
 
+def _slug_list(value):
+    """Every slug under one CMS name, from either a bare slug or a list of them.
+
+    A chain puts several campuses in one blog under one CMS name - Bhubaneswar had three
+    "DAV Public School" rows. Keyed by name alone they overwrite each other, and the two
+    slugs that lost were then read as links to pages that do not exist, failing a blog
+    whose links were right. Accepts a bare string so a caller with one slug per name,
+    which is every other blog, needs no change.
+    """
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    return [str(v).strip() for v in values if str(v).strip()]
+
+
 def absences(notes):
     """{normalised school name: {"fee"|"reviews": reason}} from notes.md.
 
@@ -241,7 +254,8 @@ def check_blog(md, keyword, expected_ids=None, folder=None, meta=None, notes=Non
                expected_slugs=None):
     """Returns (passed, [lines]). Lines are 'PASS ...', 'FAIL ...' or 'WARN ...' (warnings never fail).
 
-    `expected_slugs` is {CMS name: CMS slug} from the CMS tab, the same rows expected_ids comes
+    `expected_slugs` is {CMS name: CMS slug, or a list of them when campuses share a name}
+    from the CMS tab, the same rows expected_ids comes
     from. It gates the [read_more_blogs] links, both per school and over the whole post, so a
     link built from the school's name instead of its slug cannot ship again.
     """
@@ -274,9 +288,13 @@ def check_blog(md, keyword, expected_ids=None, folder=None, meta=None, notes=Non
                 f" -> meta says {', '.join(str(c) for c in wrong)}, the post has {len(blocks)}"
                 if wrong else ""))
     declared = absences(notes)
-    slugs = {_norm(k): v for k, v in (expected_slugs or {}).items() if str(v).strip()}
+    slugs = {_norm(k): _slug_list(v) for k, v in (expected_slugs or {}).items() if _slug_list(v)}
     for name, text in blocks:
-        issues, warnings = check_school(name, text, folder, slugs.get(_norm(name)))
+        # One slug only. A name held by several campuses cannot say which is this section's,
+        # and the H2 of such a section carries the locality anyway, so it never matched here.
+        # The whole-post rule below still checks those links against every slug in the run.
+        own = slugs.get(_norm(name)) or []
+        issues, warnings = check_school(name, text, folder, own[0] if len(own) == 1 else None)
         # An absence this school declared stops being a failure and becomes a warning
         # carrying its reason, so the human reviewing qc_pass sees what was tried.
         excused = declared.get(_norm(name), {})
@@ -319,8 +337,8 @@ def check_blog(md, keyword, expected_ids=None, folder=None, meta=None, notes=Non
     # it with every link dead. Here nothing has to match: a read_more_blogs link that is not
     # one of the run's slug links is wrong whichever section it sits in.
     if expected_slugs:
-        allowed = {_link_key(l) for v in expected_slugs.values() if str(v).strip()
-                   for l in slug_links(v)}
+        allowed = {_link_key(l) for v in expected_slugs.values()
+                   for s in _slug_list(v) for l in slug_links(s)}
         stray = sorted({l for l in READ_MORE.findall(md) if _link_key(l) not in allowed})
         rule(not stray, "read_more_blogs links match a CMS slug"
              + (f" -> {stray} is no school's /school/<slug> or /<slug>-reviews" if stray else ""))

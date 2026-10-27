@@ -306,7 +306,13 @@ def cmd_qc(sh, args):
         # The CMS slug per school, for the [read_more_blogs] links. They are built from it and
         # used to be rebuilt from the school's name instead, which drops the locality the slug
         # ends in and points every link at a page that does not exist.
-        slugs = {r["CMS name"]: r["CMS slug"] for r in rows if r["CMS slug"].strip()}
+        # A list per name, because a chain can put several campuses in one blog under one CMS
+        # name: Bhubaneswar had three "DAV Public School" rows, and keeping one slug per name
+        # failed the two that lost over links that were right.
+        slugs = {}
+        for r in rows:
+            if r["CMS slug"].strip():
+                slugs.setdefault(r["CMS name"], []).append(r["CMS slug"])
         meta_path = os.path.join(folder, "meta.json")
         meta = json.load(open(meta_path, encoding="utf-8")) if os.path.exists(meta_path) else {}
         # notes.md carries the researcher's record of what it tried. A fee or a review
