@@ -28,9 +28,25 @@ would be a far worse trade than the one this module exists to fix.
 import json
 import os
 import re
+import shutil
+import time
+
+import config
 
 SHEET_DIR = "research"
 INDEX = "index.json"
+
+# The shared store: one sheet per school, named by CMS id, kept across blogs.
+#
+# A city gets more than one keyword -- "schools in X", "cbse schools in X", "international
+# schools in X" -- and 381 of the 483 pending keywords (Oct 2026) sit in a city that has
+# another. Every one of them used to re-research every school from scratch, at about 465k
+# tokens per school. The sheets were already being saved per run folder; this just puts them
+# somewhere the next blog can find them.
+STORE_DIR = os.path.join("data", "research")
+# Fees are published per session and reviews move slowly, so a sheet is good for a term, not
+# a year. Past that it is cheaper to be right than to save the research.
+MAX_AGE_DAYS = 90
 
 # A field line: an upper-case key at the start of a line. The review sub-lines ("Academics:
 # 80/20") and the numbered THREE_FACTS lines are not upper-case, so they fall through to the
@@ -56,6 +72,69 @@ CRM_FIELDS = ("CURRICULUM", "MEDIUM", "CO_ED", "GRADES")
 
 def sheet_dir(folder):
     return os.path.join(folder, SHEET_DIR)
+
+
+def store_dir():
+    return os.path.join(config.ROOT, STORE_DIR)
+
+
+def _max_age_days():
+    try:
+        return max(0, int(config.env("RESEARCH_MAX_AGE_DAYS") or MAX_AGE_DAYS))
+    except (TypeError, ValueError):
+        return MAX_AGE_DAYS
+
+
+def reuse(folder, schools, max_age_days=None):
+    """Copy any still-fresh stored sheet into this run's research/. Returns the ids reused.
+
+    Called before the writer runs, so a school whose sheet is already on disk needs no
+    subagent at all -- which is the saving. The copy lands where collect() and the writer
+    both already look, so nothing downstream has to know a sheet was reused.
+
+    Never raises. A store that cannot be read is a run that researches everything, which is
+    exactly what used to happen, so there is nothing here worth failing a blog over.
+    """
+    limit = _max_age_days() if max_age_days is None else max_age_days
+    if not limit:
+        return set()
+    directory = sheet_dir(folder)
+    reused = set()
+    for s in schools or []:
+        sid = str(s.get("id", "")).strip()
+        if not sid:
+            continue
+        src = os.path.join(store_dir(), f"{sid}.md")
+        try:
+            if not os.path.isfile(src):
+                continue
+            if (time.time() - os.path.getmtime(src)) > limit * 86400:
+                continue
+            os.makedirs(directory, exist_ok=True)
+            shutil.copyfile(src, os.path.join(directory, f"{sid}.md"))
+        except OSError:
+            continue
+        reused.add(sid)
+    return reused
+
+
+def save_to_store(folder):
+    """Copy this run's sheets into the shared store, newest wins. Returns problems."""
+    directory, problems = sheet_dir(folder), []
+    if not os.path.isdir(directory):
+        return problems
+    try:
+        os.makedirs(store_dir(), exist_ok=True)
+    except OSError as err:
+        return [f"research store not created ({err})"]
+    for name in sorted(os.listdir(directory)):
+        if not name.lower().endswith(".md"):
+            continue
+        try:
+            shutil.copyfile(os.path.join(directory, name), os.path.join(store_dir(), name))
+        except OSError as err:
+            problems.append(f"{name}: not stored for reuse ({err})")
+    return problems
 
 
 def parse_sheet(text):

@@ -23,7 +23,15 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
    researchers' job.
 3. **Outline approval is pre-granted (Step 3).** Don't stop to present the outline. Go straight to writing.
 4. **Research is done by subagents, not by you.** For each school, spawn a
-   `school-researcher` subagent (the `Agent` tool, `subagent_type: "school-researcher"`). It
+   `school-researcher` subagent (the `Agent` tool, `subagent_type: "school-researcher"`) --
+   **except** any school whose line above ends `| Fact sheet: ALREADY ON DISK`. An earlier
+   blog researched that school and its sheet is already at
+   `{out_dir}/{research_dir}/<CMS ID>.md`. `Read` that file and use it exactly as you would
+   use a sheet a subagent just handed you. **Do not spawn a researcher for it** and do not
+   re-check it on the web: a researcher costs about 465k tokens, and the whole point of the
+   marker is not to spend them twice on one school. Count it in your `researcher:` line as
+   reused rather than researched. If the file is somehow missing or will not parse, then and
+   only then spawn a researcher for that school as normal. It
    already knows the source order, the query shapes, the verification rule and the search
    budget, so **the prompt you send it must contain only that school's data and nothing else**:
 
@@ -39,9 +47,11 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
    directory page it already read. It is evidence the listing exists, and the researcher
    knows what to do with it. Copy the number across exactly, or `NONE`.
 
-   **Don't pass a model when you spawn them.** The researchers run on a stronger model than you
-   do, set in their own definition, because their half of the job is the one nothing checks
-   afterwards. A model you pass in the spawn call would override that and quietly downgrade them.
+   **Don't pass a model when you spawn them.** Their model is set in their own definition, and a
+   model you pass in the spawn call overrides it. Measured on the Bhubaneswar run (Oct 2026):
+   twelve researchers burned 5.58M tokens against the writer's 4.52M, because the expensive
+   model was doing the mechanical half -- search, fetch, copy into a fixed field list -- while
+   the writer did the prose. Leave the choice where it is recorded.
 
    Send no instructions, no reminders, no context about the blog. Every researcher must receive
    a byte-identical prompt apart from those four values. That is not a style preference: the
@@ -110,7 +120,9 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
    yourself and do **not** substitute a general-purpose agent — both quietly undo the reason this
    stage uses subagents, and the run would look like a success. As the first line of notes.md,
    write `researcher: school-researcher x <n> schools, <total> searches` from the fact sheets'
-   `SEARCHES_USED` values, so a human can see the real agent ran.
+   `SEARCHES_USED` values, so a human can see the real agent ran. When sheets were reused,
+   end that line `, <m> sheets reused` and count only the schools you actually spawned in
+   `<n>`, so the tally still shows what this run went out and did.
 5. **Length: aim for {budget} words of prose and treat it as a ceiling, not a target to beat.**
    That is the skill's formula (about 250-300 words per school plus intro, conclusion and FAQ)
    for this school count. You have no shell, so don't count words yourself — but do keep each

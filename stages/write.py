@@ -59,7 +59,7 @@ def pick_ratings(folder):
     return out
 
 
-def build_prompt(keyword, city, area, slug, schools, ratings=None):
+def build_prompt(keyword, city, area, slug, schools, ratings=None, reused=()):
     """schools: [{"name", "id", "slug", "area", "page_name"}] in blog order.
 
     Each school carries its OWN locality, which for a city keyword is not the keyword's area.
@@ -72,10 +72,16 @@ def build_prompt(keyword, city, area, slug, schools, ratings=None):
     whether one does.
     """
     ratings = ratings or {}
+    reused = {str(i).strip() for i in (reused or ())}
 
     def seen(s):
         n = ratings.get(_key(s.get("page_name") or s["name"]), 0)
         return str(n) if n else "NONE"
+
+    def sheet(s):
+        """Marks a school whose fact sheet an earlier blog already researched."""
+        return (" | Fact sheet: ALREADY ON DISK"
+                if str(s.get("id", "")).strip() in reused else "")
 
     # The CMS slug as well as the finished profile URL. The writer builds two
     # [read_more_blogs] links per school from the slug, and it used to be given only the
@@ -86,7 +92,7 @@ def build_prompt(keyword, city, area, slug, schools, ratings=None):
     lines = "\n".join(
         f"     {i}. {s['name']} | Locality: {s.get('area') or area} | CMS ID: {s['id']}"
         f" | CMS slug: {str(s['slug']).strip('/')}"
-        f" | Profile URL: {profile_url(s['slug'])} | Directory ratings: {seen(s)}"
+        f" | Profile URL: {profile_url(s['slug'])} | Directory ratings: {seen(s)}{sheet(s)}"
         for i, s in enumerate(schools, 1)
     )
     return config.read_prompt("write_wrapper.md").format(
@@ -114,9 +120,14 @@ def write_blog(keyword, city, area, slug, schools):
     ratings = pick_ratings(folder)
     clear_previous(folder)
     os.makedirs(folder, exist_ok=True)
-    # WRITE_MODEL is the writer only. The school-researcher subagents keep their own model
-    # (opus, set in their definition), which takes precedence over inheriting this one.
-    envelope = claude_cli.run(build_prompt(keyword, city, area, slug, schools, ratings),
+    # Sheets an earlier blog already paid for, copied in before the writer starts so those
+    # schools need no subagent. After clear_previous, which moves the whole folder away.
+    reused = research.reuse(folder, schools)
+    if reused:
+        print(f"  reusing {len(reused)} of {len(schools)} fact sheets from earlier blogs")
+    # WRITE_MODEL is the writer only. The school-researcher subagents keep their own model,
+    # set in their definition, which takes precedence over inheriting this one.
+    envelope = claude_cli.run(build_prompt(keyword, city, area, slug, schools, ratings, reused),
                               allowed_tools=TOOLS, max_turns=120, timeout=2400,
                               model=config.env("WRITE_MODEL") or None)
     with open(os.path.join(folder, "run.json"), "w", encoding="utf-8") as fh:
@@ -134,6 +145,7 @@ def write_blog(keyword, city, area, slug, schools):
     # partial run. research.collect never raises, so a malformed sheet costs a printed
     # problem and nothing more.
     problems = research.collect(folder, schools)
+    problems += research.save_to_store(folder)
     problems += assets.process(folder)
     try:
         docx_export.export(folder)

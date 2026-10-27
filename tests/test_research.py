@@ -1,5 +1,6 @@
 import json
 import os
+import time
 
 from stages import research
 
@@ -138,3 +139,62 @@ def test_no_research_folder_is_a_problem_not_an_exception(tmp_path):
     problems = research.collect(str(folder), [{"name": "A School", "id": "1"}])
     assert any("saved none of them" in p for p in problems)
     assert not os.path.exists(os.path.join(str(folder), research.SHEET_DIR, research.INDEX))
+
+
+# Reuse across blogs. A city gets several keywords and every one of them used to re-research
+# every school, at roughly 465k tokens each (measured on Bhubaneswar, Oct 2026).
+
+def _store(monkeypatch, tmp_path):
+    store = tmp_path / "store"
+    monkeypatch.setattr(research, "store_dir", lambda: str(store))
+    return store
+
+
+def test_a_fresh_stored_sheet_is_copied_in_and_reported(monkeypatch, tmp_path):
+    store = _store(monkeypatch, tmp_path)
+    store.mkdir()
+    (store / "23222.md").write_text(SHEET, encoding="utf-8")
+    folder = tmp_path / "run"
+    folder.mkdir()
+    reused = research.reuse(str(folder), [{"id": "23222", "name": "Sri R.v. School"}])
+    assert reused == {"23222"}
+    assert (folder / research.SHEET_DIR / "23222.md").read_text(encoding="utf-8") == SHEET
+
+
+def test_a_stale_sheet_is_not_reused(monkeypatch, tmp_path):
+    store = _store(monkeypatch, tmp_path)
+    store.mkdir()
+    old = store / "23222.md"
+    old.write_text(SHEET, encoding="utf-8")
+    stale = time.time() - 200 * 86400
+    os.utime(old, (stale, stale))
+    folder = tmp_path / "run"
+    folder.mkdir()
+    assert research.reuse(str(folder), [{"id": "23222"}]) == set()
+    assert not (folder / research.SHEET_DIR).exists()
+
+
+def test_a_school_with_no_stored_sheet_is_not_reused(monkeypatch, tmp_path):
+    _store(monkeypatch, tmp_path)
+    folder = tmp_path / "run"
+    folder.mkdir()
+    assert research.reuse(str(folder), [{"id": "99999"}]) == set()
+
+
+def test_save_to_store_then_reuse_round_trips(monkeypatch, tmp_path):
+    _store(monkeypatch, tmp_path)
+    first = tmp_path / "first"
+    (first / research.SHEET_DIR).mkdir(parents=True)
+    (first / research.SHEET_DIR / "23222.md").write_text(SHEET, encoding="utf-8")
+    assert research.save_to_store(str(first)) == []
+    second = tmp_path / "second"
+    second.mkdir()
+    assert research.reuse(str(second), [{"id": "23222"}]) == {"23222"}
+
+
+def test_a_missing_store_is_not_an_error(monkeypatch, tmp_path):
+    _store(monkeypatch, tmp_path)          # never created
+    folder = tmp_path / "run"
+    folder.mkdir()
+    assert research.reuse(str(folder), [{"id": "23222"}]) == set()
+    assert research.save_to_store(str(folder)) == []

@@ -2,7 +2,7 @@
 name: school-researcher
 description: Researches one school for a Yellow Slate listicle and returns a compact fact sheet. Finds the UDISE registry record, class-wise fees, parent review percentages and a campus photo URL, verifying each against the school's own name and locality. Spawned once per school by the write stage. Read-only on the web; writes no files.
 tools: WebSearch, WebFetch
-model: opus
+model: sonnet
 color: blue
 ---
 
@@ -51,7 +51,7 @@ You have **at most 14 searches total**. Spend them roughly like this:
 |---|---|
 | UDISE registry record | 2 |
 | Parent reviews | 3-4 |
-| Fees | 4-5 |
+| Fees | 2-5 (stop at the first rung that pays out) |
 | Official site (photo, fees, facilities) | 1-2 |
 
 Fees and reviews get the larger share because they are the two fields that
@@ -82,6 +82,17 @@ These are worked out from past runs. Use them rather than inventing your own.
 
   1. `"<school name>" <locality> fee structure site:<official domain>`
      (skip if the school has no working site)
+  1b. **The mandatory disclosure, on that same site.** Every CBSE-affiliated school
+     must publish one, it is where the fee table usually sits, and it is usually a
+     PDF — `mandatory public disclosure` or `fee structure` in the URL. Search
+     `site:<official domain> mandatory public disclosure OR fee structure filetype:pdf`,
+     or take the "Mandatory Public Disclosure" link off the site's own menu, and
+     **fetch it**. This rung is cheap and it is where the misses were: Mothers
+     Public School Bhubaneswar shipped as "contact the school" (Oct 2026) with a
+     full Nursery-to-X table — admission, monthly and annual, by class — sitting in
+     `mothers.edu.in/wp-content/uploads/.../Mandatory-Disclosure.pdf`, one fetch
+     past where the old wording told you to stop. If the PDF will not render,
+     say so in `GAPS` **with its URL**, so a human can open it in one click.
   2. `uniapply OR ezyschooling OR edustoke "<school name>" <locality> fees`
   3. `careers360 OR schoolsuniverse OR schoolmykids "<school name>" <locality> fees`
   4. `"<school name>" <locality> "fee structure" 2026-27 annual fees`
@@ -112,18 +123,26 @@ These are worked out from past runs. Use them rather than inventing your own.
 via `schools.org.in`, or CBSE SARAS. This is government registry data and is on
 record for most recognised schools.
 
-**Fees.** Try the school's own site first — the 2025 Delhi fee Act requires fees
-to be published there, so that is the right citation when it exists. **One search
-and at most one fetch, then move on** to the ladder above. In practice the
-aggregators carry this far more often: Uniapply, Ezyschooling and Edustoke
-publish class-wise tables, and Careers360, SchoolsUniverse and SchoolMyKids
-carry a figure when those three have nothing. Name whichever one you used.
+**Fees.** The school's own site is both the best citation and the cheapest place
+to stop — the 2025 Delhi fee Act requires fees to be published there, and CBSE
+requires a mandatory public disclosure everywhere. **Spend rungs 1 and 1b
+properly: a search, the fee or admissions page, and the disclosure PDF.** That is
+up to three fetches and it is worth them. The old wording here capped this at one
+fetch and sent you off to the aggregators, which is how a published fee table got
+reported as absent.
+
+**Stop at the first rung that pays out.** Every extra search re-reads everything
+you have already fetched, so a rung you did not need is the most expensive thing
+you can do. Only an empty rung sends you down. If rungs 1 and 1b are empty, the
+aggregators are genuinely good: Uniapply, Ezyschooling and Edustoke publish
+class-wise tables, and Careers360, SchoolsUniverse and SchoolMyKids carry a
+figure when those three have nothing. Name whichever one you used.
 
 If you find an annual figure but no class-wise breakdown, that is still a result.
 Report the figure and say class-wise numbers are not published. Do **not** report
 "contact the school" when you have a number.
 
-`FEES: NOT_FOUND` is a real answer, but only after all four rungs. It now costs
+`FEES: NOT_FOUND` is a real answer, but only after every rung, 1b included. It now costs
 the school its place in the blog, so do not reach for it early — and record in
 `GAPS` which rungs you actually tried.
 
