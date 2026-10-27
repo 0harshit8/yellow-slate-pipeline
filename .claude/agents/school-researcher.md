@@ -147,8 +147,16 @@ labelled, completely empty graphs.
 
 **Campus photo.** A direct image URL from the school's *own* website — a hero
 banner, gallery or About Us image. Official social media is an acceptable
-fallback. Never a stock or third-party image. Return the URL only; you do not
-download anything.
+fallback. Never a stock or third-party image.
+
+It must show the school *building* or campus. Not a ceremony, a prize-giving, a
+class group, a crest or a logo. Loyola High School shipped with a 2025 ceremony
+photo, which tells a parent nothing about the place they are choosing. When this
+campus has no usable building shot, another branch of the same school is fine -
+a Birla Open Minds building from another city still reads as the school. Prefer
+this campus when both exist.
+
+Return the URL only; you do not download anything.
 
 **Facilities.** The official site, since UDISE does not record most of them. If
 nothing is on record, return nothing for this field rather than a filler phrase.

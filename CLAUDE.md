@@ -23,4 +23,7 @@
   12); `stages/cms.py` creates missing schools and resolves their areas. Volumes are the one
   input that must come from the user by hand.
 - Ensure generated blog admission, fee, parent review, and graph sections are populated with real data; never output empty or placeholder graphs.
+- A school image must be the school building or campus, never a ceremony, class group or
+  logo. Another branch of the same school is an acceptable substitute when this campus has
+  no usable building shot. The operative wording is in `.claude/agents/school-researcher.md`.
 <!-- end claude-reflect -->
