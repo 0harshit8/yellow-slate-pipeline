@@ -29,7 +29,8 @@ CMS = "CMS"
 WEEKLY = "Weekly review"
 ARCHIVE = "Schools archive"
 
-BLOG_HEADERS = ["Keyword", "City", "Area", "Slug", "Status", "Error", "Live link", "Minutes", "Updated"]
+BLOG_HEADERS = ["Writer", "Keyword", "Volume", "City", "Area", "Slug", "Status", "Error", "Live link",
+                "Minutes", "Updated"]
 CMS_HEADERS = ["Keyword", "School", "CMS name", "CMS ID", "CMS slug", "Created by us", "Area"]
 ARCHIVE_HEADERS = ["Keyword", "School", "Count", "Vol", "Approved"]
 STATUSES = ["new", "picked", "approved", "cms_done", "written", "qc_pass", "qc_fail", "published"]
@@ -85,13 +86,13 @@ def setup(sh):
         ["Weekly review", "", "", ""],
         ["", "This week", "Total", "Target"],
         ["Blogs published",
-         f'=COUNTIFS(Blogs!E:E,"published",Blogs!I:I,">="&{week_start})',
-         '=COUNTIF(Blogs!E:E,"published")', 600],
+         f'=COUNTIFS(Blogs!G:G,"published",Blogs!K:K,">="&{week_start})',
+         '=COUNTIF(Blogs!G:G,"published")', 489],
         ["Schools added to CMS", "", '=COUNTIF(CMS!F:F,"y")', ""],
-        ["Avg minutes per blog", "", '=IFERROR(AVERAGE(Blogs!H2:H),"")', 15],
+        ["Avg minutes per blog", "", '=IFERROR(AVERAGE(Blogs!J2:J),"")', 15],
         ["", "", "", ""],
         ["Status", "Blogs", "", ""],
-    ] + [[s, f'=COUNTIF(Blogs!E:E,"{s}")', "", ""] for s in STATUSES]
+    ] + [[s, f'=COUNTIF(Blogs!G:G,"{s}")', "", ""] for s in STATUSES]
     existing[WEEKLY].update(values=grid, range_name="A1", value_input_option="USER_ENTERED")
     existing[WEEKLY].format("A1:D2", {"textFormat": {"bold": True}})
 
@@ -108,15 +109,21 @@ def _validation(sheet_id, start_row, end_row, col, condition):
 # Row tabs (Blogs, CMS)
 
 
+def _key_col(headers):
+    """0-based column that says a row exists. Keyword, since Blogs starts with Writer, which can be blank."""
+    return headers.index("Keyword") if "Keyword" in headers else 0
+
+
 def records(ws):
-    """Rows with a value in column A, as dicts keyed by header, each with "_row" (1-based)."""
+    """Rows with a value in the key column, as dicts keyed by header, each with "_row" (1-based)."""
     values = ws.get_all_values()
     if not values:
         return []
     headers = values[0]
+    key = _key_col(headers)
     out = []
     for i, row in enumerate(values[1:], start=2):
-        if not row or not row[0].strip():
+        if len(row) <= key or not row[key].strip():
             continue
         row = row + [""] * (len(headers) - len(row))
         rec = dict(zip(headers, row))
@@ -126,8 +133,8 @@ def records(ws):
 
 
 def append(ws, rows):
-    """Write rows starting at the first row with an empty column A."""
-    col_a = ws.col_values(1)
+    """Write rows starting at the first row with an empty key column."""
+    col_a = ws.col_values(_key_col(ws.row_values(1)) + 1)
     start = len(col_a) + 1
     for i, v in enumerate(col_a[1:], start=2):
         if not v.strip():

@@ -66,8 +66,15 @@ def wanted(args):
     return {r.strip().lower() for r in args.row}
 
 
+def mine(blogs):
+    """Only this machine's rows when WRITER is set in .env, so two writers never take the same keyword."""
+    if not config.WRITER:
+        return blogs
+    return [b for b in blogs if b.get("Writer", "").strip().lower() == config.WRITER.lower()]
+
+
 def rows_in(blogs, status, args):
-    rows = [b for b in blogs if b["Status"].strip() == status]
+    rows = [b for b in mine(blogs) if b["Status"].strip() == status]
     if args.row:
         rows = [b for b in rows if b["Keyword"].strip().lower() in wanted(args)]
     limit = getattr(args, "limit", 0)
@@ -104,7 +111,7 @@ def cmd_add(sh, args):
     rows = []
     for kw in fresh:
         area = args.area or area_from_keyword(kw)
-        rows.append([kw, args.city, area, blog_slug(kw, args.city), "new", "", "", "", ""])
+        rows.append(["", kw, "", args.city, area, blog_slug(kw, args.city), "new", "", "", "", ""])
         print(f"Added: {kw} | {args.city} | {area}")
     if rows:
         sheet.append(ws, rows)
@@ -474,7 +481,9 @@ def cmd_approve(sh, args):
 
 
 def cmd_status(sh, args):
-    blogs = sheet.records(sh.worksheet(sheet.BLOGS))
+    blogs = mine(sheet.records(sh.worksheet(sheet.BLOGS)))
+    if config.WRITER:
+        print(f"Only {config.WRITER}'s keywords (WRITER in .env)")
     counts = Counter(b["Status"].strip() or "(blank)" for b in blogs)
     for s in sheet.STATUSES:
         print(f"  {s:<10} {counts.get(s, 0)}")
@@ -482,6 +491,9 @@ def cmd_status(sh, args):
     print(f"\n{len(blogs)} keywords, {len(errors)} with errors")
     for b in errors[:10]:
         print(f"  {b['Keyword']}: {b['Error'][:120]}")
+    nxt = [b["Keyword"] for b in blogs if b["Status"].strip() == "new"][:10]
+    if nxt:
+        print("\nNext new, in sheet order:\n" + "\n".join(f"  {k}" for k in nxt))
 
 
 def main():

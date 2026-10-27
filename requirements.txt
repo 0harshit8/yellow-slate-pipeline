@@ -1,0 +1,10 @@
+gspread==6.2.1
+google-auth==2.57.1
+requests==2.34.2
+markdown-it-py==4.2.0
+python-docx==1.2.0
+pillow==12.2.0
+matplotlib==3.11.2
+numpy==2.5.3
+openpyxl==3.1.5
+pytest==9.1.1

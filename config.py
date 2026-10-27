@@ -29,7 +29,10 @@ def env(name, default=None):
     return os.environ.get(name, default)
 
 
-GCP_KEY = env("GCP_KEY", r"C:\Users\Harshit\.aios\gcp-sheets-key.json")
+# A relative GCP_KEY is read from the repo root, so a copied folder can carry its own key.
+GCP_KEY = os.path.join(ROOT, env("GCP_KEY", r"C:\Users\Harshit\.aios\gcp-sheets-key.json"))
+# Set on a second writer's machine: every stage then only touches rows with this name in Writer.
+WRITER = env("WRITER", "").strip()
 SHEET_ID = env("SHEET_ID", "")
 CMS_MODE = env("CMS_MODE", "fake")  # fake | api
 BLOG_MODE = env("BLOG_MODE", "off")  # off | api. off = publish by hand.

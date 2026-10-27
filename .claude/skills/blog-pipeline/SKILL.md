@@ -20,7 +20,8 @@ User pastes keywords (a list, one per line, or comma separated).
 Run `python pipeline.py status`. Show the counts in one line, for example "12 new, 2 picked waiting for schools, 1 written".
 
 - If blogs are already `picked`, offer those first (go to step 3).
-- For `new` rows, ask which keywords or how many. "first 5" means the first 5 `new` rows in sheet order.
+- For `new` rows, ask which keywords or how many. "first 5" means the first 5 `new` rows in sheet order; `status` lists the next 10.
+- If `status` says "Only <name>'s keywords", `WRITER` is set in `.env` and every stage skips other people's rows. A keyword that does nothing was assigned to someone else: say so, never change the Writer column.
 - Run `python pipeline.py pick --row "<kw>" --row "<kw>" ...`. About 1 minute per keyword. Report any keyword that errored and why.
 
 ## 3. Choosing schools by search volume

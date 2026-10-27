@@ -5,3 +5,4 @@ output/
 data/
 __pycache__/
 .pytest_cache/
+gcp-sheets-key.json
