@@ -18,6 +18,7 @@ def test_cms_name_is_the_plain_name_without_the_area():
     assert cms_name("Bal Bharati Public School Kalkaji", "Kalkaji") == "Bal Bharati Public School"
     assert cms_name("The British School", "Chanakyapuri") == "The British School"
     assert cms_name("Kidzee Kalkaji", "Kalkaji") == "Kidzee"
+    assert cms_name("Army Public School, Danapur Cantt.", "Danapur Cantt") == "Army Public School"
 
 
 def test_cms_name_never_returns_empty():

@@ -227,7 +227,7 @@ def cms_name(school, area=""):
     name = expand_short_form(re.sub(r"\s+", " ", school).strip())
     if area:
         name = re.sub(rf"\s*\b{re.escape(area)}\b\s*", " ", name, flags=re.I)
-        name = re.sub(r"\s+", " ", name).strip(" ,-")
+        name = re.sub(r"\s+", " ", name).strip(" ,-.")
     return name or expand_short_form(school.strip())
 
 
