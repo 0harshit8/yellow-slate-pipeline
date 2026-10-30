@@ -68,7 +68,7 @@ Source: Delhi Public School Kalkaji Official Website
 
 The published annual fee is about Rs. 95,000 for the 2026-27 session. Class-wise figures are not published.
 
-Source: Careers360
+Source: Yellow Slate research
 
 #### Conclusion
 

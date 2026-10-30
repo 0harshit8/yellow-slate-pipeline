@@ -187,7 +187,8 @@ Working outside the pipeline, read both from the Yellow Slate CMS. There is no l
 list: the old `references/schools.csv` is gone, and the CMS is current where the file was not.
 
 ### 2.6 School Image
-Search each school's official website for a campus/building photo (hero banner, gallery, About Us page). **Download the actual image** using web_fetch and save it locally (e.g., as `school-name.jpg`). Do NOT just note the image URL — the final blog must include the actual downloaded image file, not a link to an external URL. If the image cannot be downloaded, check official social media. If still not found, flag as missing.
+Not researched and not added. School photos go in by hand after the blog is written, so
+spend no search, no fetch and no line of the post on one, and leave no slot for one.
 
 ### 2.7 Internal Linking
 Identify 3–5 related blog URLs by web-searching `site:yellowslate.com/blog`.
@@ -204,11 +205,10 @@ Present the following to the user and **explicitly ask for approval**:
 2. **Search intent analysis** — What parents searching this keyword want
 3. **Complete outline** — All H2s and H3s following the structure template
 4. **School URL & ID matches** — The profile URL and CMS ID used for each school (the ID goes in `[btn_admissions]`)
-5. **School images** — Actual downloaded images from each school's official website (or flagged as missing)
-6. **Source summary** — Key data points found per school (reviews, fees, admissions)
-7. **Internal linking plan** — 3–5 internal links with reasoning
-8. **Parent review graph plan** — Confirm categories and data per school
-9. **Missing data** — Any schools where fee/review/admission data or images were not found
+5. **Source summary** — Key data points found per school (reviews, fees, admissions)
+6. **Internal linking plan** — 3–5 internal links with reasoning
+7. **Parent review graph plan** — Confirm categories and data per school
+8. **Missing data** — Any schools where fee, review or admission data was not found
 
 End with: *"Please review this outline. I'll proceed to write the full blog once you approve (or let me know any changes)."*
 
@@ -251,7 +251,6 @@ Follow the exact structure from `references/content-structure-listicle.md`:
    - H2 with school number and name
    - `[btn_admissions]` shortcode
    - 3 bullet points (first bullet = school name hyperlinked to its CMS profile URL)
-   - School image from official website
    - Info table (2-column, no headers)
    - LLM Summary Line (plain text, after table, before review)
    - Parent Review H3 with 4–6 percentage-based bullets
@@ -307,12 +306,11 @@ same value the first bullet's profile URL is built from.
 ## Formatting Rules
 
 1. **Headings:** H2 for school names (`## 1. School Name`). H3 for subsections. H4 for Conclusion.
-2. **School image:** Downloaded from official website and saved locally. After intro bullets, before info table. Alt text = school name. Use local file path in markdown, not external URL.
-3. **School info tables:** Two columns with headers `Detail` and `Information`. Always include both headers.
-4. **Fee tables:** Multi-column with headers when class-wise data available. Always markdown — never images. Always include a source line below the fee table indicating where the data was sourced from (e.g., "Source: [School Name] Official Website — Mandatory Disclosure Page" or "Source: Edustoke.com"). Do NOT hyperlink Edustoke or Ezyschooling.
-5. **Bullets:** Exactly 3 per school introduction. First bullet always starts with hyperlinked school name.
-6. **Shortcodes:** `[btn_admissions id="XXX"]` immediately after H2, where XXX is the school's CMS ID. If no ID was given for a school, leave id="" and flag it. Other shortcodes only if IDs provided.
-7. **No fictional data — but "unknown" is a last resort, not a first move.** Before writing any
+2. **School info tables:** Two columns with headers `Detail` and `Information`. Always include both headers.
+3. **Fee tables:** Multi-column with headers when class-wise data available. Always markdown — never images. Include a source line below the fee table **only when the source is the school itself** (e.g., "Source: [School Name] Official Website — Mandatory Disclosure Page"). **Never name a third-party site anywhere in the post** — no "Source: Edustoke.com", no "per Careers360", no "Ezyschooling lists", in prose, table cells or source lines. Where the figure came from an aggregator, write exactly "Source: Yellow Slate research" and state the figure as our own, with any caveat written plainly: "Fees are for 2025-26 and include boarding." Every fee section still needs a source line — QC fails one without it. The school, its board (CBSE, ICSE, CISCE) and government registries are not third parties and may be named.
+4. **Bullets:** Exactly 3 per school introduction. First bullet always starts with hyperlinked school name.
+5. **Shortcodes:** `[btn_admissions id="XXX"]` immediately after H2, where XXX is the school's CMS ID. If no ID was given for a school, leave id="" and flag it. Other shortcodes only if IDs provided.
+6. **No fictional data — but "unknown" is a last resort, not a first move.** Before writing any
    fallback, work the field's source order in Step 2.4. Then:
    - **Objective field** (board, grades, year established, location, medium, co-ed) → it is almost
      always on record. Exhaust SARAS and the UDISE record first. Only if genuinely absent, write
@@ -326,8 +324,8 @@ same value the first bullet's profile URL is built from.
    - Only use *"Contact the school for the latest details."* where a parent genuinely must ask the
      school directly — current-cycle admission dates, seat vacancies, and Tier 3 fees.
    - **Never** let a cell say "contact the school" for a fact a public registry holds.
-8. **LLM Summary Line:** Plain text only. No formatting. Between info table and Parent Review H3.
-9. **Parent review graph:** Pastel horizontal bar chart after review bullets. Consistent across all
+7. **LLM Summary Line:** Plain text only. No formatting. Between info table and Parent Review H3.
+8. **Parent review graph:** Pastel horizontal bar chart after review bullets. Consistent across all
    schools. **Mandatory for every school, with no evidence floor.** However thin or contradictory
    the review base, derive percentages from what exists (aggregate rating, the few written reviews,
    follower and shortlist counts), state the thin base in a bullet, and publish both the numbers and
@@ -363,7 +361,6 @@ Before delivering the final post, verify ALL of these:
 - [ ] Each school has `[btn_admissions id="XXX"]` immediately after its H2, with XXX populated from the school's CMS ID
 - [ ] Exactly 3 bullet points per school introduction
 - [ ] First bullet of every school starts with the school name hyperlinked to its CMS profile URL
-- [ ] School image downloaded from official website and embedded as local file, placed after intro bullets, before info table
 - [ ] School info table: two-column with `Detail` and `Information` headers, consistent row order
 - [ ] Fee structure table: one row per class/grade — classes never merged even if fees are identical
 - [ ] `[read_more_blogs]` links built from each school's CMS slug (locality included):
@@ -374,7 +371,8 @@ Before delivering the final post, verify ALL of these:
 - [ ] Graph data matches text-based review percentages exactly
 - [ ] Admission process: ~100–150 words with bullet points
 - [ ] Fee structure as markdown text table (mandatory unless only range available)
-- [ ] Fee source citation present below every fee table (e.g., "Source: School Official Website" or "Source: Edustoke.com")
+- [ ] Fee source line present below a fee table taken from the school's own page (e.g., "Source: School Official Website"); absent where the figure came from an aggregator
+- [ ] No third-party site named anywhere in the post (Edustoke, Ezyschooling, Careers360, EducationWorld, Justdial, SchoolMyKids, AmbitionBox, Uniapply, TargetStudy, Wikipedia)
 - [ ] Conclusion present with top school recommendations by category
 - [ ] FAQ section present with minimum 5 questions and school-specific answers
 

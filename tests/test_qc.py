@@ -75,11 +75,12 @@ def test_h1_fails_and_meta_checked():
     assert any("meta title" in l for l in fails(lines))
 
 
-def test_missing_photo_is_only_a_warning():
+def test_a_blog_with_no_photo_still_passes():
+    """Photos are added by hand after the pipeline runs, so their absence is not a finding."""
     md = load().replace("![Bal Bharati Public School Kalkaji](images/bbps.jpg)\n", "")
     passed, lines = check_blog(md, KW, expected_ids=["900001", "900002"])
     assert passed, fails(lines)
-    assert any(l.startswith("WARN") and "no school image" in l for l in lines)
+    assert not any("no school image" in l for l in lines)
 
 
 # ---- a school count claimed in the meta must match the post ---------------------------------
@@ -142,7 +143,7 @@ def test_a_fee_section_that_only_says_contact_the_school_fails():
     """
     md = load().replace(
         "The published annual fee is about Rs. 95,000 for the 2026-27 session. "
-        "Class-wise figures are not published.\n\nSource: Careers360",
+        "Class-wise figures are not published.\n\nSource: Yellow Slate research",
         "Contact the school for the latest details.")
     passed, lines = check_blog(md, KW)
     assert not passed
@@ -376,3 +377,23 @@ def test_a_stray_link_still_fails_when_a_name_holds_several_slugs():
     passed, lines = check_blog(arealess(load()), KW, expected_slugs=slugs)
     assert not passed
     assert any("no school's" in l for l in fails(lines))
+
+
+def test_a_named_third_party_site_fails():
+    # The Gwalior blog shipped with "Careers360 lists about 3,637 students" and
+    # "Source: Edustoke.com" in twelve places. The post is Yellow Slate's own.
+    for named in ("Careers360 lists about 3,637 students and 118 teachers.",
+                  "*Source: Ezyschooling.com. Figures include boarding.*",
+                  "EducationWorld ranks it 8th among Gwalior co-ed day schools.",
+                  "Parents on Justdial rate it 4.4 out of 5."):
+        md = load().replace("- Known for sports.", f"- {named}")
+        passed, lines = check_blog(md, KW)
+        assert not passed, named
+        assert any("third-party site named" in l for l in fails(lines)), named
+
+
+def test_the_board_and_the_registries_are_not_third_parties():
+    md = load().replace("- Known for sports.",
+                        "- A CBSE school; its ICSE wing and UDISE record both confirm the address.")
+    passed, lines = check_blog(md, KW)
+    assert not any("third-party site named" in l for l in fails(lines))

@@ -1,11 +1,14 @@
-"""Images and parent review graphs, done in Python after the writer finishes.
+"""Parent review graphs, done in Python after the writer finishes.
 
 The headless writer can't run shell commands, so it only records what's needed:
-  - assets.json: {"schools": [{"name", "slug", "image_url", "reviews": {category: [pos, neg]}}]}
-  - placeholders in blog.md: <!-- IMAGE: slug --> and <!-- GRAPH: slug -->
-This step downloads each image, draws each graph with Yellow Slate's own chart script,
-and swaps the placeholders for markdown images. Anything that fails is dropped from the
-blog and listed in notes.md, so QC and the human review see it.
+  - assets.json: {"schools": [{"name", "slug", "reviews": {category: [pos, neg]}}]}
+  - placeholders in blog.md: <!-- GRAPH: slug -->
+This step draws each graph with Yellow Slate's own chart script and swaps the placeholders
+for markdown images. Anything that fails is dropped from the blog and listed in notes.md,
+so QC and the human review see it.
+
+School photos are added by hand after the blog is written; nothing here fetches one.
+download_image and shrink are kept for that manual path, not called by process().
 """
 
 import importlib.util
@@ -22,6 +25,11 @@ CHART_SCRIPT = os.path.join(config.ROOT, ".claude", "skills", "yellow-slate-seo-
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36"}
 EXT = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MIN_BYTES = 5000  # anything smaller is a logo, icon or error page
+# Their media endpoint refuses a file over 5 MB, and schools publish 5120x2880 originals.
+# An image that arrives too big is shrunk rather than dropped: the alternative is a draft
+# that silently carries a local path where a photo should be.
+MAX_BYTES = 4_500_000
+MAX_SIDE = 1920   # a blog card never needs more
 
 
 def download_image(url, dest_base):
@@ -37,7 +45,34 @@ def download_image(url, dest_base):
     path = dest_base + EXT[ctype]
     with open(path, "wb") as fh:
         fh.write(r.content)
+    if len(r.content) > MAX_BYTES:
+        path = shrink(path)
     return os.path.basename(path)
+
+
+def shrink(path):
+    """Resize an oversized photo so their media endpoint will take it. Returns the new path.
+
+    A PNG photograph often will not fit under the limit as a PNG at any sane size, so it is
+    re-saved as a JPEG and the original removed -- the caller uses the returned name.
+    shortcut: transparency is dropped, which is wrong for a logo but these are photographs,
+    and MIN_BYTES has already excluded the icon-sized files. Revisit if a school ever
+    publishes a transparent campus shot.
+    """
+    from PIL import Image
+
+    with Image.open(path) as im:
+        if im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+        im.thumbnail((MAX_SIDE, MAX_SIDE))
+        im.save(path, quality=85, optimize=True)
+        if os.path.getsize(path) <= MAX_BYTES:
+            return path
+        jpg = os.path.splitext(path)[0] + ".jpg"
+        im.save(jpg, "JPEG", quality=80, optimize=True)
+    if jpg != path:
+        os.remove(path)
+    return jpg
 
 
 _chart_fn = None
@@ -105,18 +140,7 @@ def process(folder):
     problems = []
     for s in assets:
         slug, name = s.get("slug", ""), s.get("name", "")
-        img_tag, graph_tag = f"<!-- IMAGE: {slug} -->", f"<!-- GRAPH: {slug} -->"
-
-        replacement = ""
-        if s.get("image_url"):
-            try:
-                fname = download_image(s["image_url"], os.path.join(folder, "images", slug))
-                replacement = f"![{name}](images/{fname})"
-            except (ValueError, requests.RequestException) as err:
-                problems.append(f"{name}: image not downloaded ({err}) from {s['image_url']}")
-        else:
-            problems.append(f"{name}: no official image found by the writer")
-        md = md.replace(img_tag, replacement)
+        graph_tag = f"<!-- GRAPH: {slug} -->"
 
         replacement = ""
         if valid_reviews(s.get("reviews")):
@@ -138,5 +162,5 @@ def process(folder):
         fh.write(md)
     if problems:
         with open(os.path.join(folder, "notes.md"), "a", encoding="utf-8") as fh:
-            fh.write("\n\n## Pipeline: images and graphs\n\n" + "\n".join(f"- {p}" for p in problems) + "\n")
+            fh.write("\n\n## Pipeline: graphs\n\n" + "\n".join(f"- {p}" for p in problems) + "\n")
     return problems

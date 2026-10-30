@@ -129,11 +129,21 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
    school's section to roughly 250-300 words as you go, rather than writing long and hoping.
    QC fails the blog above 1.5x this number, which means a full rewrite, so staying near it is
    cheaper for everyone. Depth belongs in which facts you found, not in more words about them.
-6. **Images and graphs are handled by the pipeline after you finish. Don't download images, don't run any shell commands and don't draw charts.** Instead:
-   - In blog.md, put `<!-- IMAGE: <school-slug> -->` on its own line where each school's image goes (after the 3 intro bullets, before the info table), and `<!-- GRAPH: <school-slug> -->` on its own line where each school's parent review graph goes (after the review bullets). `<school-slug>` is the school name lowercased and hyphenated.
+6. **Graphs are handled by the pipeline after you finish. Don't run any shell commands and don't draw charts. School photos are added by hand later, so don't look for one, don't link one and don't leave a slot for one.** Instead:
+   - In blog.md, put `<!-- GRAPH: <school-slug> -->` on its own line where each school's parent review graph goes (after the review bullets). `<school-slug>` is the school name lowercased and hyphenated.
    - Don't add a markdown fallback table for the graph. The graph replaces it.
    - Write `{out_dir}/assets.json`:
-     `{{"schools": [{{"name": "<school name>", "slug": "<school-slug>", "image_url": "<direct URL of a campus photo on the school's official website, or null>", "reviews": {{"<Category>": [<positive %>, <negative %>], "...": [0, 0]}}}}]}}`
+     `{{"schools": [{{"name": "<school name>", "slug": "<school-slug>", "reviews": {{"<Category>": [<positive %>, <negative %>], "...": [0, 0]}}}}]}}`
+     Never name a third-party site in the blog. The fact sheets cite Ezyschooling, Edustoke,
+     Careers360, EducationWorld, Justdial and the rest because that is how a figure gets
+     checked — but the post is Yellow Slate's own, and sending readers the name of a rival
+     directory is not what it is for. Write "The campus has 3,637 students and 118 teachers",
+     never "Careers360 lists 3,637 students". Put any caveat in plain words instead: "Fees are
+     for 2025-26 and include boarding." The school, its board (CBSE, ICSE, CISCE) and
+     government registries may be named.
+     Every fee section still needs its `Source:` line. Name the school's own page when the
+     figure came from it (`Source: <School> Official Website — Fee Structure`); otherwise
+     write exactly `Source: Yellow Slate research`. Never a third-party name on that line.
      The review percentages must match the percentages in the blog text exactly.
      Every school whose fact sheet carries any review signal gets category percentages and a
      graph, no matter how thin or contradictory the base — derive them from whatever exists
@@ -156,6 +166,6 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
      copied verbatim, as step 4 says. A run that writes blog.md and no sheets is an incomplete
      run even if the blog is perfect.
 8. **Only read files in the skill folder and in `{out_dir}`.** Don't open, list or search other folders under `output/` or `data/`: they hold other blogs and old runs, and copying from them mixes up schools.
-9. Run the skill's quality checklist yourself before finishing (images and graphs excepted, the pipeline adds them).
+9. Run the skill's quality checklist yourself before finishing (graphs excepted, the pipeline adds them).
 
 When done, reply with one line: DONE or FAILED: <reason>.

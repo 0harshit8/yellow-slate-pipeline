@@ -12,6 +12,14 @@ BTN = re.compile(r'\[btn_admissions\s+id="([^"]*)"\]')
 IMG = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)")
 READ_MORE = re.compile(r'\[read_more_blogs\s+link="([^"]*)"')
 BAD_LINK = re.compile(r"\]\([^)]*(edustoke|ezyschooling)[^)]*\)", re.I)
+# A third-party directory named in the body. The fact sheets cite these on purpose and must
+# keep doing so, but the post is Yellow Slate's own and naming a rival directory in it is
+# not what it is for. The board and the government registries are not third parties, so
+# CBSE, ICSE, CISCE, UDISE and SARAS are deliberately absent from this list.
+NAMED_SOURCE = re.compile(
+    r"\b(edustoke|ezyschooling|careers\s?360|educationworld|education\s world|justdial"
+    r"|schoolmykids|ambitionbox|uniapply|targetstudy|indiastudychannel|edutribe"
+    r"|leverage\s?edu|sulekha|mouthshut|wikipedia|glassdoor|indeed)\b", re.I)
 BULLET = re.compile(r"^[ \t]*[-*][ \t]+(.*)$", re.M)
 # A fee amount in any form the writer uses. The three-tier fee rule turns on whether one is present.
 FEE_AMOUNT = re.compile(r"(?:₹|Rs\.?\s*)\d")
@@ -203,9 +211,6 @@ def check_school(name, text, folder, slug=None):
 
     images = IMG.findall(text)
     graphs = [i for i in images if "graph" in i[1].lower() or "sentiment" in i[0].lower()]
-    photos = [i for i in images if i not in graphs]
-    if not photos:
-        warnings.append("no school image (allowed if none found, check notes.md)")
     if not graphs:
         issues.append("no parent review graph")
     for _, path in images:
@@ -330,6 +335,9 @@ def check_blog(md, keyword, expected_ids=None, folder=None, meta=None, notes=Non
 
     bad = BAD_LINK.findall(md)
     rule(not bad, "no Edustoke/Ezyschooling hyperlinks")
+    named = sorted({n.strip() for n in NAMED_SOURCE.findall(md)}, key=str.lower)
+    rule(not named, "no third-party site named in the post"
+                    + (f" -> {', '.join(named)}" if named else ""))
     bad_links = [l for l in READ_MORE.findall(md) if l != l.lower() or re.search(r"[\s_]", l)]
     rule(not bad_links, "read_more_blogs links lowercase-hyphenated" + (f" -> {bad_links}" if bad_links else ""))
     # Over the whole post as well as per school. The per-school rule above only fires when the

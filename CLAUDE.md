@@ -23,7 +23,15 @@
   12); `stages/cms.py` creates missing schools and resolves their areas. Volumes are the one
   input that must come from the user by hand.
 - Ensure generated blog admission, fee, parent review, and graph sections are populated with real data; never output empty or placeholder graphs.
-- A school image must be the school building or campus, never a ceremony, class group or
-  logo. Another branch of the same school is an acceptable substitute when this campus has
-  no usable building shot. The operative wording is in `.claude/agents/school-researcher.md`.
+- Never name a third-party site in the published blog. No "Ezyschooling says", "per Careers360",
+  "Source: Edustoke.com" -- not in prose, not in a table cell, not in a Source line. State the
+  figure as Yellow Slate's own: "The campus has 3,637 students and 118 teachers." The school
+  itself, its board (CBSE, ICSE, CISCE) and government registries are not third parties and
+  may be named. This applies to the blog only: fact sheets in `data/research/` must keep every
+  source URL, because that is the verification trail and the writer needs it to judge a figure.
+- The pipeline never looks for or adds school images. The user adds them by hand after the
+  blog is written. Researchers must not spend a search, a fetch or a fact-sheet line on a
+  photo, the writer leaves no image slot, and a blog with no photo is not a QC finding.
+  `stages/draft.py` still uploads any image found in `output/<slug>/images/`, which is the
+  manual path.
 <!-- end claude-reflect -->
