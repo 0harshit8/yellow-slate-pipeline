@@ -48,10 +48,14 @@ STORE_DIR = os.path.join("data", "research")
 # a year. Past that it is cheaper to be right than to save the research.
 MAX_AGE_DAYS = 90
 
-# A field line: an upper-case key at the start of a line. The review sub-lines ("Academics:
-# 80/20") and the numbered THREE_FACTS lines are not upper-case, so they fall through to the
-# continuation branch and stay attached to the field above them, which is where they belong.
-FIELD = re.compile(r"^([A-Z][A-Z0-9_]*):[ \t]*(.*)$")
+# A field line: an upper-case key at the start of a line, optionally followed by a qualifier
+# in brackets. The researcher writes "FEES (2026-27, tuition per year):" often enough to
+# matter, and a key that had to touch the colon turned that line into ordinary text -- which
+# silently glued a whole class-wise fee table onto the field above and then reported no FEES.
+# The review sub-lines ("Academics: 80/20") and the numbered THREE_FACTS lines are not
+# upper-case, so they still fall through to the continuation branch and stay attached to the
+# field above them, which is where they belong.
+FIELD = re.compile(r"^([A-Z][A-Z0-9_]*)(?:[ \t]*\([^)]*\))?:[ \t]*(.*)$")
 # "CURRICULUM: CBSE | source: https://...". The source is what makes a field usable for the
 # CRM form later, so it is parsed out rather than left inside the value.
 SOURCE = re.compile(r"[ \t]*\|[ \t]*source:[ \t]*(\S+)[ \t]*$", re.I)
@@ -111,7 +115,10 @@ def reuse(folder, schools, max_age_days=None):
             if (time.time() - os.path.getmtime(src)) > limit * 86400:
                 continue
             os.makedirs(directory, exist_ok=True)
-            shutil.copyfile(src, os.path.join(directory, f"{sid}.md"))
+            # copy2, not copyfile: a plain copy stamps the new file with today's date, and
+            # save_to_store writes that date back to the store -- so a sheet that is reused
+            # at all would never reach MAX_AGE_DAYS and never be researched again.
+            shutil.copy2(src, os.path.join(directory, f"{sid}.md"))
         except OSError:
             continue
         reused.add(sid)
@@ -119,7 +126,13 @@ def reuse(folder, schools, max_age_days=None):
 
 
 def save_to_store(folder):
-    """Copy this run's sheets into the shared store, newest wins. Returns problems."""
+    """Copy this run's sheets into the shared store, newest wins. Returns problems.
+
+    A sheet _entry() flags is NOT stored. Storing it would hand the next blog a known-bad
+    sheet, and because a stored sheet is marked ALREADY ON DISK no researcher is spawned to
+    repair it -- so one bad run would go on producing bad blogs for MAX_AGE_DAYS. Leaving it
+    out costs that school one re-research, which is the cheap half of the trade.
+    """
     directory, problems = sheet_dir(folder), []
     if not os.path.isdir(directory):
         return problems
@@ -130,8 +143,19 @@ def save_to_store(folder):
     for name in sorted(os.listdir(directory)):
         if not name.lower().endswith(".md"):
             continue
+        path = os.path.join(directory, name)
         try:
-            shutil.copyfile(os.path.join(directory, name), os.path.join(store_dir(), name))
+            with open(path, encoding="utf-8") as fh:
+                _, flaw = _entry(path, fh.read())
+        except OSError as err:
+            problems.append(f"{name}: not stored for reuse ({err})")
+            continue
+        if flaw:
+            problems.append(f"{name}: not stored for reuse, it would be cached as-is ({flaw})")
+            continue
+        try:
+            # copy2 for the same reason as in reuse(): the mtime IS the sheet's age.
+            shutil.copy2(path, os.path.join(store_dir(), name))
         except OSError as err:
             problems.append(f"{name}: not stored for reuse ({err})")
     return problems

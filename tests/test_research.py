@@ -198,3 +198,31 @@ def test_a_missing_store_is_not_an_error(monkeypatch, tmp_path):
     folder.mkdir()
     assert research.reuse(str(folder), [{"id": "23222"}]) == set()
     assert research.save_to_store(str(folder)) == []
+
+
+def test_a_field_with_a_bracketed_qualifier_still_parses():
+    # The researcher writes "FEES (2026-27, tuition per year):". A key that had to touch the
+    # colon made that line ordinary text, so the fee table was swallowed by FACILITIES above
+    # it and the sheet was reported as having no FEES at all.
+    text = SHEET.replace("FEES: Class 1: 18000, Class 10: 24000",
+                         "FEES (2026-27, tuition per year):\n  Class 1: 18000\n  Class 10: 24000")
+    fields = research.parse_sheet(text)
+    assert "18000" in fields["FEES"]["value"]
+    assert "18000" not in fields["FACILITIES"]["value"]
+
+
+def test_a_reused_sheet_does_not_get_its_age_reset(monkeypatch, tmp_path):
+    # store -> run folder -> store used to stamp the sheet with today's date, so a school in
+    # a city with several keywords stayed under MAX_AGE_DAYS forever and was never re-read.
+    store = _store(monkeypatch, tmp_path)
+    store.mkdir()
+    kept = store / "23222.md"
+    kept.write_text(SHEET, encoding="utf-8")
+    aged = time.time() - 80 * 86400
+    os.utime(kept, (aged, aged))
+
+    folder = tmp_path / "run"
+    folder.mkdir()
+    assert research.reuse(str(folder), [{"id": "23222"}]) == {"23222"}
+    assert research.save_to_store(str(folder)) == []
+    assert abs(os.path.getmtime(kept) - aged) < 2
