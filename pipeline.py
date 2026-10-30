@@ -16,6 +16,10 @@ Commands
   python pipeline.py write  [--limit N] [--row KEYWORD]
   python pipeline.py qc     [--limit N] [--row KEYWORD]
   python pipeline.py draft  --row KEYWORD            unpublished draft in their CMS + edit link
+  python pipeline.py topup  [--row KEYWORD] [--apply FILE]
+                                                 which schools still need a browser (reviews,
+                                                 scanned fee tables, building photos), and
+                                                 merge back what a browser session found
   python pipeline.py names                       Semrush paste list (bare school names, 100 per batch)
   python pipeline.py volumes                     fill Vol from Semrush exports in data/semrush/
   python pipeline.py docx   [--row KEYWORD]       rebuild blog.docx (to share) from blog.md
@@ -46,6 +50,7 @@ from clients.tavily import TavilyError
 from stages import cms as cms_stage
 from stages import pick as pick_stage
 from stages import qc as qc_stage
+from stages import topup as topup_stage
 from stages import write as write_stage
 from stages.names import blog_slug, semrush_term
 from stages.selection import new_keywords, parse_selection, parse_vols, suggest_schools
@@ -502,6 +507,62 @@ def cmd_status(sh, args):
         print("\nNext new, in sheet order:\n" + "\n".join(f"  {k}" for k in nxt))
 
 
+def cmd_topup(sh, args):
+    """The browser half's worklist, and the merge back. See BROWSER_TOPUP.md.
+
+    Reviews, scanned fee tables and building photos are the three fields a headless
+    researcher cannot reach, because claude_cli runs with --strict-mcp-config and so has no
+    browser. This command is both ends of that gap and none of the middle: it says which
+    schools still need a browser, and it merges what a browser session found. The browser
+    work itself happens in a desktop session, via the school-topper agent.
+    """
+    if args.apply:
+        try:
+            patches = topup_stage.read_patches(args.apply)
+        except ValueError as err:
+            print(f"topup: {err}")
+            return
+        done, failed = 0, 0
+        for cms_id, fields in patches.items():
+            changed, problem = topup_stage.apply_patch(topup_stage.sheet_path(cms_id), fields)
+            if problem:
+                print(f"  skipped {problem}")
+                failed += 1
+            elif changed:
+                print(f"  {cms_id}: {', '.join(changed)}")
+                done += 1
+            else:
+                # a batched topper returns an entry per school, empty when it found nothing
+                print(f"  {cms_id}: nothing found")
+        print(f"topup --apply: {done} sheets updated, {failed} refused")
+        return
+
+    blogs = sheet.records(sh.worksheet(sheet.BLOGS))
+    done_rows = sheet.records(sh.worksheet(sheet.CMS))
+    rows = [b for b in mine(blogs)
+            if not args.row or b["Keyword"].strip().lower() in wanted(args)]
+    for b in rows[:args.limit] if args.limit else rows:
+        kw, city = b["Keyword"].strip(), b["City"].strip()
+        schools = [{"id": r["CMS ID"], "name": r["CMS name"], "city": city,
+                    "area": r.get("Area", "")} for r in cms_rows(done_rows, kw)]
+        if not schools:
+            continue
+        work, no_sheet = topup_stage.worklist(schools)
+        folder = blog_folder(b)
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, "topup.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(work, fh, indent=2, ensure_ascii=False)
+        tally = Counter(g for w in work for g in w["needs"])
+        print(f"topup: {kw}: {len(work)} of {len(schools)} schools need a browser"
+              f"{' (' + ', '.join(f'{k} {v}' for k, v in sorted(tally.items())) + ')' if tally else ''}")
+        for w in work:
+            print(f"  {w['id']:>6} {w['name']}: {', '.join(w['needs'])}")
+        if no_sheet:
+            print(f"  no stored sheet yet (research, not top-up): {', '.join(no_sheet)}")
+        print(f"  worklist: {path}")
+
+
 def main():
     p = argparse.ArgumentParser(description="Yellow Slate blog pipeline")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -529,6 +590,11 @@ def main():
     dr = sub.add_parser("draft", help="create an unpublished draft in their CMS (qc_pass rows)")
     dr.add_argument("--row", action="append", default=[], required=True,
                     help="only this keyword (repeatable). Required: this writes to their site.")
+    tu = sub.add_parser("topup", help="which schools still need a browser, and merge what it found")
+    tu.add_argument("--row", action="append", default=[], help="only this keyword (repeatable)")
+    tu.add_argument("--limit", type=int, default=0)
+    tu.add_argument("--apply", default="", metavar="FILE",
+                    help="merge a browser session's patches into the stored sheets")
     sub.add_parser("names", help="Semrush paste list of school names missing a volume")
     sub.add_parser("volumes", help="fill Vol from Semrush exports in data/semrush/")
     sub.add_parser("status")
@@ -538,7 +604,8 @@ def main():
     {"setup": cmd_setup, "add": cmd_add, "pick": cmd_pick, "cms": cmd_cms,
      "write": cmd_write, "qc": cmd_qc, "status": cmd_status,
      "names": cmd_names, "volumes": cmd_volumes, "docx": cmd_docx, "draft": cmd_draft,
-     "show": cmd_show, "approve": cmd_approve, "setvol": cmd_setvol, "suggest": cmd_suggest}[args.cmd](sh, args)
+     "show": cmd_show, "approve": cmd_approve, "setvol": cmd_setvol, "suggest": cmd_suggest,
+     "topup": cmd_topup}[args.cmd](sh, args)
 
 
 if __name__ == "__main__":
