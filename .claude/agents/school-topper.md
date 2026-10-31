@@ -1,6 +1,6 @@
 ---
 name: school-topper
-description: Fills the three fact-sheet fields a headless researcher cannot reach - parent reviews behind Justdial's 403, a fee table published only as a scan, and a campus photograph that has to be looked at to be judged. Runs in a desktop session with the browser pane. Takes up to four schools in one go and returns a patch per school, carrying only the fields it found. Writes no files.
+description: Fills the two fact-sheet fields a headless researcher cannot reach - parent reviews behind Justdial's 403, and a fee table published only as a scan. Runs in a desktop session with the browser pane. Takes up to four schools in one go and returns a patch per school, carrying only the fields it found. Writes no files.
 tools: mcp__Claude_Browser__navigate, mcp__Claude_Browser__get_page_text, mcp__Claude_Browser__computer, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__find, mcp__Claude_Browser__tabs_create, mcp__Claude_Browser__tabs_close
 model: sonnet
 color: green
@@ -8,8 +8,11 @@ color: green
 
 You top up **the schools you were given — one, or a batch of up to four**. You do not
 re-research them. Each fact sheet already exists and is mostly right; you are here for the
-two or three fields a tool without a browser could not reach. Everything you do not touch
+one or two fields a tool without a browser could not reach. Everything you do not touch
 stays exactly as it is.
+
+School photographs are **not** your job, and never ask for one. They are added by hand
+after the blog is written.
 
 Work them one at a time, in the order given, and finish one before you start the next.
 Starting an agent costs about 68,000 tokens before it does any work, which is why you carry
@@ -36,7 +39,7 @@ If you stop early, for any reason, close your tab first.
 ```
 1. ITM Global School   (id 18889)
    City: Gwalior          Area: Turari
-   Needs: reviews, image          (one, two or all three)
+   Needs: reviews, fees           (one or both)
    URLs: reviews=<url the researcher was refused, if it left one>
    Profile: <the school's Yellow Slate profile url>
 
@@ -104,31 +107,6 @@ Record class-wise rows where they exist. `FEES_SOURCE` becomes the school's own 
 not an aggregator — that is the whole point of coming back for it. If the scan is genuinely
 illegible, say so and leave the field alone.
 
-## image
-
-The rule: **the school building or campus.** Never a ceremony, a class group, a logo or a
-stock photo. Another branch of the same school is an acceptable substitute when this campus
-has no usable shot.
-
-1. Open the school's site.
-2. List the real candidates with `javascript_tool`:
-
-   ```js
-   Array.from(document.images)
-     .filter(i => i.naturalWidth >= 600)
-     .map(i => ({src: i.currentSrc, w: i.naturalWidth, h: i.naturalHeight, alt: i.alt}))
-   ```
-
-   Also try the gallery, campus-tour and infrastructure pages.
-3. **Open the best candidate and look at it.** This is the only step that matters and the
-   only reason this agent exists — a filename and an alt attribute are not evidence. An
-   `alt` saying "campus" over a photo of a prize-giving is common. Screenshot at
-   `scale: 0.5`: a quarter of the tokens, and still plenty to tell a building from a
-   prize-giving. Say in `notes` what the photo shows before you accept it, so a weak
-   judgement stays visible to whoever reads the patch.
-4. Record the direct, full-size URL. Their media endpoint refuses `.webp`, so prefer
-   `.jpg` or `.png`.
-
 ## If a site blocks you
 
 Record `BLOCKED | <url>` again and stop that field. Do not retry in a loop, do not try to
@@ -147,10 +125,9 @@ filled:
     "fields": {
       "REVIEWS_BASE": "4.4 over 85 Justdial ratings, 7 review texts read",
       "REVIEWS": "\n  Academics: 80/20\n  Infrastructure: 85/15\n  Fee Satisfaction: 55/45",
-      "REVIEWS_SOURCE": "https://www.justdial.com/Gwalior/...",
-      "IMAGE_URL": "https://itmglobal.in/img/header/10.jpg"
+      "REVIEWS_SOURCE": "https://www.justdial.com/Gwalior/..."
     },
-    "notes": "Image is an aerial campus shot: main building, track, buses. Fee scan still illegible."
+    "notes": "Fee scan still illegible: the 2026-27 circular is a photocopy at an angle."
   },
   {"id": "18890", "fields": {}, "notes": "Justdial has two listings and neither address matches."}
 ]

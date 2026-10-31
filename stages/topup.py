@@ -1,9 +1,9 @@
-"""Find the three fields a browser has to fetch, and merge the answers back.
+"""Find the two fields a browser has to fetch, and merge the answers back.
 
-The headless researcher gets most of a fact sheet right. Three fields it cannot get at all:
-Justdial answers a direct fetch with 403, some fee tables are published only as scans, and
-deciding whether a photograph shows the building or a prize-giving needs eyes. So this is a
-repair pass over three fields, not a second research pass. See BROWSER_TOPUP.md.
+The headless researcher gets most of a fact sheet right. Two fields it cannot get at all:
+Justdial answers a direct fetch with 403, and some fee tables are published only as scans.
+So this is a repair pass over two fields, not a second research pass. School photos are not
+one of them -- they are added by hand after the blog is written. See BROWSER_TOPUP.md.
 
 It is split from the browser half on purpose. clients/claude_cli.py runs every LLM step as
 `claude -p --strict-mcp-config`, which skips MCP servers -- the browser among them -- so the
@@ -62,7 +62,7 @@ def topped_up(fields):
 
 
 def needs(fields):
-    """Which of reviews/fees/image this parsed sheet still needs a browser for."""
+    """Which of reviews/fees this parsed sheet still needs a browser for."""
     out, done = [], topped_up(fields)
     for group, name in FIELD_FOR.items():
         value = _value(fields, name)

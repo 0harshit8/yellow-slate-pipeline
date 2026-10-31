@@ -66,7 +66,7 @@ FENCE = re.compile(r"^\s*```[a-z]*\s*$|^\s*```\s*$", re.M)
 FIELDS = ("SCHOOL", "CMS_ID", "PROFILE_URL", "VERIFIED_VIA", "CURRICULUM", "GRADES",
           "ESTABLISHED", "MEDIUM", "CO_ED", "ADDRESS", "FACILITIES", "FEES", "FEES_SOURCE",
           "FEES_NOTE", "ADMISSIONS", "REVIEWS_BASE", "REVIEWS", "REVIEWS_SOURCE",
-          "IMAGE_URL", "THREE_FACTS", "GAPS", "CONFLICTS", "NO_EVIDENCE", "SEARCHES_USED")
+          "THREE_FACTS", "GAPS", "CONFLICTS", "NO_EVIDENCE", "SEARCHES_USED")
 
 # Without these five nobody can verify a created school in their CRM, which is the whole
 # reason the sheets are kept. Called out separately so a human reading index.json sees at a

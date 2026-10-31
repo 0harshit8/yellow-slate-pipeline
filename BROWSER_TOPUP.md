@@ -2,21 +2,23 @@
 
 ## What problem this solves
 
-A fact sheet has ~24 fields. The headless researcher gets nearly all of them right. Three it
+A fact sheet has ~24 fields. The headless researcher gets nearly all of them right. Two it
 structurally cannot get:
 
 | Field | Why WebFetch fails |
 |---|---|
 | `REVIEWS` | Justdial serves 403 to a direct fetch. `.claude/agents/school-researcher.md:25` already says so, and the agent has no tool that gets past it. |
 | `FEES` | Some schools publish the table only as a scanned PDF or a JPEG. Text extraction returns nothing. |
-| `IMAGE_URL` | Deciding whether a photo shows the building or a prize-giving is a visual judgement. WebFetch reads text. |
 
 Measured on Gwalior (12 schools): 6 had `REVIEWS: NOT_FOUND` while Justdial held 80-185
-ratings for every one. 11 of 12 had no confirmed building photo. 2 fee tables were
-unreadable scans.
+ratings for every one. 2 fee tables were unreadable scans.
 
-So this pass repairs **three fields**, not whole schools. Routing every school through a
-browser to fix three fields would be paying full price for a partial repair.
+`IMAGE_URL` was a third field here until school photos left the pipeline altogether. They
+are now found and added by hand after the blog is written, so the top-up pass does not look
+for one.
+
+So this pass repairs **two fields**, not whole schools. Routing every school through a
+browser to fix two fields would be paying full price for a partial repair.
 
 ## Where it runs, and why it cannot be a normal stage
 
@@ -52,7 +54,7 @@ Pure Python, in `stages/topup.py`. Reads the sheets for that keyword's schools a
 
 ```json
 [{"id": "18889", "name": "ITM Global School", "city": "Gwalior", "area": "Turari",
-  "needs": ["reviews", "image"],
+  "needs": ["reviews", "fees"],
   "urls": {"reviews": "<the BLOCKED url, if P1 recorded one>", "site": "<PROFILE_URL>"}}]
 ```
 
@@ -61,7 +63,6 @@ A field needs top-up when:
 - `reviews` — `REVIEWS` is missing, `NOT_FOUND`, or `BLOCKED`
 - `fees` — `FEES` is missing or `NOT_FOUND`, **or** `FEES_NOTE` names a scan/PDF that would
   not render
-- `image` — `IMAGE_URL` is missing, `NONE`, or `NOT_FOUND`
 
 ## 2. `.claude/agents/school-topper.md` — the browser researcher
 
@@ -90,11 +91,6 @@ read" — because the count and the readable text are usually very different num
 visually. `FEES_SOURCE`
 becomes the school's own document rather than an aggregator.
 
-**Image.** List images ≥600px wide with `javascript_tool`, including `alt` and natural
-dimensions. Open the best candidate and *look* at it — `scale: 0.5` is plenty, and a
-quarter of the tokens. Confirm it shows the building or
-campus — not a ceremony, class group or logo. Another branch of the same school is an
-acceptable substitute (`.claude/agents/school-researcher.md` holds the operative wording).
 
 ## 3. `pipeline.py topup --apply` — merge back
 
@@ -138,17 +134,12 @@ So the lever is fewer agents, not cheaper ones:
 Re-reading the agent definition is *not* a lever: 984 words plus the prompt is ~1,800 tokens
 of an 80,000-token run, about 2%.
 
-**Haiku: not yet, and not everywhere.** The image call is close to a perceptual yes/no
-against one clear rule, so it is the plausible candidate. Fees and reviews are not: they
-turn on telling The Scindia School from Scindia Kanya Vidyalaya, picking the right one of
-three Justdial listings for Pearls Valley, and adding line items back up under a stamp that
-hides the total. Note also that the two good calls so far were *rejections* — a reception of
-dignitaries, and a student portrait with the building blurred behind — which needed
-strictness rather than willingness to accept something plausible. Sonnet already produced
-two bad category splits here; haiku would more likely be worse at exactly that. So: try it
-on image-only batches once batching has landed, compare a few against what sonnet found,
-and keep the "say what the photo shows before you accept it" instruction so a weak
-judgement stays visible.
+**Haiku: no, now that only fees and reviews are left.** The image call was the one
+plausible candidate — a perceptual yes/no against one clear rule — and it is gone. Fees and
+reviews are not that: they turn on telling The Scindia School from Scindia Kanya Vidyalaya,
+picking the right one of three Justdial listings for Pearls Valley, and adding line items
+back up under a stamp that hides the total. Sonnet already produced two bad category splits
+here; a smaller model would more likely be worse at exactly that.
 
 ## Scale
 

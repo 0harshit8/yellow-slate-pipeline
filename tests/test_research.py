@@ -29,8 +29,6 @@ REVIEWS:
   Infrastructure: 74/26
 REVIEWS_SOURCE: https://www.justdial.com/Kolar/Sri-R-V-School
 
-IMAGE_URL: https://srivschool.in/img/campus.jpg
-
 THREE_FACTS:
   1. Running since 1983 on the New Extension campus.
   2. UDISE code 29201300123.
