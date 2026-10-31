@@ -55,13 +55,14 @@ def test_a_blocked_field_needs_a_browser_and_keeps_its_url():
     assert topup._url(fields["REVIEWS"]["value"]).startswith("https://www.justdial.com/")
 
 
-def test_reviews_blocked_is_work_and_a_missing_photo_is_not():
-    assert set(topup.needs(research.parse_sheet(SHEET))) == {"reviews"}
+def test_reviews_blocked_and_a_missing_photo_are_both_work():
+    assert set(topup.needs(research.parse_sheet(SHEET))) == {"reviews", "image"}
 
 
 def test_a_complete_sheet_needs_nothing():
     text = (SHEET.replace("REVIEWS: BLOCKED | https://www.justdial.com/Gwalior/Itm-Global-School/9999PX751_BZDET",
                           "REVIEWS:\n  Academics: 80/20")
+                 .replace("IMAGE_URL: NONE", "IMAGE_URL: https://itmglobal.in/img/header/10.jpg")
                  )
     assert topup.needs(research.parse_sheet(text)) == []
 
@@ -147,13 +148,14 @@ def test_worklist_names_the_gaps_and_separates_schools_with_no_sheet(monkeypatch
         {"id": "99999", "name": "Never Researched School", "city": "Gwalior", "area": ""},
     ])
     assert len(work) == 1 and no_sheet == ["Never Researched School"]
-    assert set(work[0]["needs"]) == {"reviews"}
+    assert set(work[0]["needs"]) == {"reviews", "image"}
     assert work[0]["urls"]["reviews"].startswith("https://www.justdial.com/")
 
 
 def test_a_school_whose_sheet_is_complete_is_not_in_the_worklist(monkeypatch, tmp_path):
     good = (SHEET.replace("REVIEWS: BLOCKED | https://www.justdial.com/Gwalior/Itm-Global-School/9999PX751_BZDET",
                           "REVIEWS:\n  Academics: 80/20")
+                 .replace("IMAGE_URL: NONE", "IMAGE_URL: https://itmglobal.in/img/header/10.jpg")
                  )
     _store(monkeypatch, tmp_path, text=good)
     work, no_sheet = topup.worklist([{"id": "18889", "name": "ITM Global School"}])
@@ -232,3 +234,27 @@ def test_a_second_patch_keeps_what_the_first_one_recorded(tmp_path):
     topup.apply_patch(str(path), {"IMAGE_URL": "https://itmglobal.in/img/header/10.jpg"})
     recorded = topup.topped_up(research.parse_sheet(path.read_text(encoding="utf-8")))
     assert {"FEES", "IMAGE_URL"} <= recorded
+
+
+# --- the photo budget -------------------------------------------------------------------- #
+
+def test_the_photo_budget_stops_the_hunt_and_keeps_fees_and_reviews():
+    """3M tokens is the ceiling, spent as schools sent looking for a photo. Past it the image
+    group goes and the rest of the worklist stands, because a photo can be added by hand."""
+    work = [{"needs": ["reviews", "image"], "urls": {"image": "x"}},
+            {"needs": ["image"], "urls": {}},
+            {"needs": ["fees", "image"], "urls": {}}]
+
+    left, dropped = topup.spend_image_budget(work, 1)[1:]
+
+    assert (left, dropped) == (0, 2)
+    assert [w["needs"] for w in work] == [["reviews", "image"], [], ["fees"]]
+    # the school that needed nothing else is not worth a browser session
+    assert len(topup.spend_image_budget(work, 0)[0]) == 2
+    assert "image" not in work[0]["urls"] or work[0]["urls"]["image"] == "x"
+
+
+def test_the_budget_is_about_four_blogs_of_photos():
+    # 8-12 schools a blog, so one blog never reaches the ceiling and a city sweep does.
+    assert 40 <= topup.image_cap() <= 60
+    assert topup.image_cap(0) == 0

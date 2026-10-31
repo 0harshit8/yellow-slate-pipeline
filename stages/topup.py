@@ -1,9 +1,9 @@
-"""Find the two fields a browser has to fetch, and merge the answers back.
+"""Find the three fields a browser has to fetch, and merge the answers back.
 
-The headless researcher gets most of a fact sheet right. Two fields it cannot get at all:
-Justdial answers a direct fetch with 403, and some fee tables are published only as scans.
-So this is a repair pass over two fields, not a second research pass. School photos are not
-one of them -- they are added by hand after the blog is written. See BROWSER_TOPUP.md.
+The headless researcher gets most of a fact sheet right. Three fields it cannot get at all:
+Justdial answers a direct fetch with 403, some fee tables are published only as scans, and
+deciding whether a photograph shows the building or a prize-giving needs eyes. So this is a
+repair pass over three fields, not a second research pass. See BROWSER_TOPUP.md.
 
 It is split from the browser half on purpose. clients/claude_cli.py runs every LLM step as
 `claude -p --strict-mcp-config`, which skips MCP servers -- the browser among them -- so the
@@ -30,7 +30,26 @@ UNREADABLE = re.compile(r"\b(scan|scanned|unreadable|image[- ]based"
                         r"|(?:will|would|could|does|did) ?n[o']t render"
                         r"|could ?n[o']t (?:be )?(?:read|open(?:ed)?))\b", re.I)
 
-FIELD_FOR = {"reviews": "REVIEWS", "fees": "FEES"}
+FIELD_FOR = {"reviews": "REVIEWS", "fees": "FEES", "image": "IMAGE_URL"}
+
+# The ceiling for one run's photo hunt: 3,000,000 tokens, which is the number the user set.
+# Nothing here can count real tokens -- a subagent's usage never comes back to the pipeline
+# -- so the budget is spent in the unit this module can count: schools sent to a browser for
+# a photo. From BROWSER_TOPUP.md s6, measured over 14 topper agents: ~68,000 tokens to start
+# an agent, four schools sharing one start, ~630 a tool call, and a photo takes about eight
+# calls (list, open, look, record). The headless researcher's share of the same hunt -- one
+# extra fetch and at most one extra search, ~40,000 against its ~465,000 a school -- is
+# counted here too, because the two halves are hunting the same photo.
+#
+# At ~62,000 a school that is about 48 schools, or four blogs' worth, in one run. A single
+# blog is 8-12 schools and never reaches it; a city sweep across several keywords does.
+IMAGE_BUDGET = 3_000_000
+IMAGE_COST = 40_000 + 68_000 // 4 + 630 * 8
+
+
+def image_cap(budget=IMAGE_BUDGET):
+    """How many schools one run may send looking for a photo before the budget is spent."""
+    return max(0, int(budget // IMAGE_COST))
 
 
 def _value(fields, name):
@@ -62,7 +81,7 @@ def topped_up(fields):
 
 
 def needs(fields):
-    """Which of reviews/fees this parsed sheet still needs a browser for."""
+    """Which of reviews/fees/image this parsed sheet still needs a browser for."""
     out, done = [], topped_up(fields)
     for group, name in FIELD_FOR.items():
         value = _value(fields, name)
@@ -73,6 +92,26 @@ def needs(fields):
             # would not render. The browser can read the real one.
             out.append(group)
     return out
+
+
+def spend_image_budget(work, left):
+    """Drop the image group past the run's photo budget. Returns (work, budget left, dropped).
+
+    Reviews and fees are never dropped -- they are what this pass exists for, and a photo
+    can be added by hand. An entry left with nothing to do leaves the worklist, so a browser
+    session is never started for a school it has no work on.
+    """
+    dropped = 0
+    for w in work:
+        if "image" not in w["needs"]:
+            continue
+        if left > 0:
+            left -= 1
+        else:
+            w["needs"].remove("image")
+            w["urls"].pop("image", None)
+            dropped += 1
+    return [w for w in work if w["needs"]], left, dropped
 
 
 def sheet_path(cms_id):

@@ -75,12 +75,13 @@ def test_h1_fails_and_meta_checked():
     assert any("meta title" in l for l in fails(lines))
 
 
-def test_a_blog_with_no_photo_still_passes():
-    """Photos are added by hand after the pipeline runs, so their absence is not a finding."""
+def test_missing_photo_is_only_a_warning():
+    """Every school is meant to have one, but a school with no photo anywhere is a note for a
+    human to fill by hand, not a reason to hold the blog."""
     md = load().replace("![Bal Bharati Public School Kalkaji](images/bbps.jpg)\n", "")
     passed, lines = check_blog(md, KW, expected_ids=["900001", "900002"])
     assert passed, fails(lines)
-    assert not any("no school image" in l for l in lines)
+    assert any(l.startswith("WARN") and "no school image" in l for l in lines)
 
 
 # ---- a school count claimed in the meta must match the post ---------------------------------

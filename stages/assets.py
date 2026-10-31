@@ -1,14 +1,14 @@
-"""Parent review graphs, done in Python after the writer finishes.
+"""Images and parent review graphs, done in Python after the writer finishes.
 
 The headless writer can't run shell commands, so it only records what's needed:
-  - assets.json: {"schools": [{"name", "slug", "reviews": {category: [pos, neg]}}]}
-  - placeholders in blog.md: <!-- GRAPH: slug -->
-This step draws each graph with Yellow Slate's own chart script and swaps the placeholders
-for markdown images. Anything that fails is dropped from the blog and listed in notes.md,
-so QC and the human review see it.
+  - assets.json: {"schools": [{"name", "slug", "image_url", "reviews": {category: [pos, neg]}}]}
+  - placeholders in blog.md: <!-- IMAGE: slug --> and <!-- GRAPH: slug -->
+This step downloads each image, draws each graph with Yellow Slate's own chart script,
+and swaps the placeholders for markdown images. Anything that fails is dropped from the
+blog and listed in notes.md, so QC and the human review see it.
 
-School photos are added by hand after the blog is written; nothing here fetches one.
-download_image and shrink are kept for that manual path, not called by process().
+The hand path still works alongside it: draft.py uploads whatever sits in
+output/<slug>/images/, whether this step put it there or a person did.
 """
 
 import importlib.util
@@ -140,7 +140,18 @@ def process(folder):
     problems = []
     for s in assets:
         slug, name = s.get("slug", ""), s.get("name", "")
-        graph_tag = f"<!-- GRAPH: {slug} -->"
+        img_tag, graph_tag = f"<!-- IMAGE: {slug} -->", f"<!-- GRAPH: {slug} -->"
+
+        replacement = ""
+        if s.get("image_url"):
+            try:
+                fname = download_image(s["image_url"], os.path.join(folder, "images", slug))
+                replacement = f"![{name}](images/{fname})"
+            except (ValueError, requests.RequestException) as err:
+                problems.append(f"{name}: image not downloaded ({err}) from {s['image_url']}")
+        else:
+            problems.append(f"{name}: no building photo on the fact sheet, add one by hand")
+        md = md.replace(img_tag, replacement)
 
         replacement = ""
         if valid_reviews(s.get("reviews")):
@@ -162,5 +173,5 @@ def process(folder):
         fh.write(md)
     if problems:
         with open(os.path.join(folder, "notes.md"), "a", encoding="utf-8") as fh:
-            fh.write("\n\n## Pipeline: graphs\n\n" + "\n".join(f"- {p}" for p in problems) + "\n")
+            fh.write("\n\n## Pipeline: images and graphs\n\n" + "\n".join(f"- {p}" for p in problems) + "\n")
     return problems

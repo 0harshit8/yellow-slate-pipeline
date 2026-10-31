@@ -541,6 +541,7 @@ def cmd_topup(sh, args):
     done_rows = sheet.records(sh.worksheet(sheet.CMS))
     rows = [b for b in mine(blogs)
             if not args.row or b["Keyword"].strip().lower() in wanted(args)]
+    photo_budget, over_budget = topup_stage.image_cap(), 0
     for b in rows[:args.limit] if args.limit else rows:
         kw, city = b["Keyword"].strip(), b["City"].strip()
         schools = [{"id": r["CMS ID"], "name": r["CMS name"], "city": city,
@@ -548,6 +549,11 @@ def cmd_topup(sh, args):
         if not schools:
             continue
         work, no_sheet = topup_stage.worklist(schools)
+        # The photo hunt has a token ceiling (IMAGE_BUDGET in stages/topup.py). Past it the
+        # image group is dropped from the worklist and the run says so at the end, rather
+        # than quietly spending more.
+        work, photo_budget, dropped = topup_stage.spend_image_budget(work, photo_budget)
+        over_budget += dropped
         folder = blog_folder(b)
         os.makedirs(folder, exist_ok=True)
         path = os.path.join(folder, "topup.json")
@@ -561,6 +567,10 @@ def cmd_topup(sh, args):
         if no_sheet:
             print(f"  no stored sheet yet (research, not top-up): {', '.join(no_sheet)}")
         print(f"  worklist: {path}")
+    if over_budget:
+        print(f"topup: photo budget spent after {topup_stage.image_cap()} schools "
+              f"(~{topup_stage.IMAGE_BUDGET:,} tokens). {over_budget} more need a photo and "
+              f"were left out -- run topup again for those, or add them by hand.")
 
 
 def main():

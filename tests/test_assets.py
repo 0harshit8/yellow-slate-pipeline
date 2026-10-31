@@ -7,23 +7,23 @@ from stages import assets
 def test_graph_drawn_and_placeholders_swapped(tmp_path, monkeypatch):
     (tmp_path / "blog.md").write_text("## 1. A\n\n<!-- IMAGE: a -->\n\n### Parent Review\n\n<!-- GRAPH: a -->\n\n<!-- IMAGE: ghost -->\n")
     (tmp_path / "assets.json").write_text(json.dumps({"schools": [
-        {"name": "A", "slug": "a", "reviews": {"Academics": [80, 10], "Fees": [55, 30]}}]}))
+        {"name": "A", "slug": "a", "image_url": None, "reviews": {"Academics": [80, 10], "Fees": [55, 30]}}]}))
     problems = assets.process(str(tmp_path))
     md = (tmp_path / "blog.md").read_text()
     assert "![Parent sentiment breakdown for A](graphs/a.png)" in md
-    assert "<!--" not in md  # placeholders with no assets entry are removed
+    assert "<!--" not in md  # unknown and image-less placeholders are removed
     assert os.path.exists(tmp_path / "graphs" / "a.png")
-    assert problems == []  # a blog with no photo is not a problem; they are added by hand
-    assert not os.path.exists(tmp_path / "notes.md")
+    assert any("no building photo" in p for p in problems)
+    assert "Pipeline: images and graphs" in (tmp_path / "notes.md").read_text()
 
 
 def test_bad_review_data_gives_no_graph(tmp_path):
     (tmp_path / "blog.md").write_text("<!-- GRAPH: a -->\n")
     (tmp_path / "assets.json").write_text(json.dumps({"schools": [
-        {"name": "A", "slug": "a", "reviews": {"Academics": "lots"}}]}))
+        {"name": "A", "slug": "a", "image_url": None, "reviews": {"Academics": "lots"}}]}))
     problems = assets.process(str(tmp_path))
     assert any("no category review percentages" in p for p in problems)
-    assert "Pipeline: graphs" in (tmp_path / "notes.md").read_text()
+    assert "Pipeline: images and graphs" in (tmp_path / "notes.md").read_text()
     assert "<!--" not in (tmp_path / "blog.md").read_text()
 
 
@@ -49,7 +49,7 @@ def test_all_zero_reviews_draw_no_graph(tmp_path):
     """
     (tmp_path / "blog.md").write_text("<!-- GRAPH: a -->\n")
     (tmp_path / "assets.json").write_text(json.dumps({"schools": [
-        {"name": "A", "slug": "a",
+        {"name": "A", "slug": "a", "image_url": None,
          "reviews": {"Academics": [0, 0], "Infrastructure": [0, 0]}}]}))
     problems = assets.process(str(tmp_path))
     assert not os.path.exists(tmp_path / "graphs" / "a.png")
@@ -62,7 +62,7 @@ def test_one_zero_category_still_draws_a_graph(tmp_path):
     real ones all the time, and dropping the whole graph for it would lose real data."""
     (tmp_path / "blog.md").write_text("<!-- GRAPH: a -->\n")
     (tmp_path / "assets.json").write_text(json.dumps({"schools": [
-        {"name": "A", "slug": "a",
+        {"name": "A", "slug": "a", "image_url": None,
          "reviews": {"Academics": [82, 11], "Fee Satisfaction": [0, 0]}}]}))
     problems = assets.process(str(tmp_path))
     assert os.path.exists(tmp_path / "graphs" / "a.png")

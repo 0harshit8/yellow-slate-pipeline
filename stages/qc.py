@@ -211,6 +211,9 @@ def check_school(name, text, folder, slug=None):
 
     images = IMG.findall(text)
     graphs = [i for i in images if "graph" in i[1].lower() or "sentiment" in i[0].lower()]
+    photos = [i for i in images if i not in graphs]
+    if not photos:
+        warnings.append("no school image (allowed if none found, check notes.md)")
     if not graphs:
         issues.append("no parent review graph")
     for _, path in images:

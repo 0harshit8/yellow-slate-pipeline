@@ -187,8 +187,19 @@ Working outside the pipeline, read both from the Yellow Slate CMS. There is no l
 list: the old `references/schools.csv` is gone, and the CMS is current where the file was not.
 
 ### 2.6 School Image
-Not researched and not added. School photos go in by hand after the blog is written, so
-spend no search, no fetch and no line of the post on one, and leave no slot for one.
+Every school needs a photo of its own building or campus. Work the ladder and stop at the
+first rung that pays out: a page you have already loaded (`og:image`, hero banner, About
+Us), then the site's gallery / campus-tour / infrastructure pages, then the school's Yellow
+Slate profile, then the school's own Facebook or Instagram, then one search. It must show
+the building — never a ceremony, class group, crest, logo or stock photo; another branch of
+the same school is an acceptable substitute. **Never** an image from a school directory, an
+aggregator or Google Maps: Yellow Slate re-hosts the file and inherits the copyright
+problem with it.
+
+Working by hand, download the image and save it locally (e.g. `school-name.jpg`) — the blog
+must carry the file, not a link to someone else's server. In a pipeline run, record the URL
+only and let the pipeline download it. If nothing can be sourced anywhere, flag it as
+missing in the outline (Step 3) under "Missing data".
 
 ### 2.7 Internal Linking
 Identify 3–5 related blog URLs by web-searching `site:yellowslate.com/blog`.

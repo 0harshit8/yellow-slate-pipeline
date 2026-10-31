@@ -129,11 +129,15 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
    school's section to roughly 250-300 words as you go, rather than writing long and hoping.
    QC fails the blog above 1.5x this number, which means a full rewrite, so staying near it is
    cheaper for everyone. Depth belongs in which facts you found, not in more words about them.
-6. **Graphs are handled by the pipeline after you finish. Don't run any shell commands and don't draw charts. School photos are added by hand later, so don't look for one, don't link one and don't leave a slot for one.** Instead:
-   - In blog.md, put `<!-- GRAPH: <school-slug> -->` on its own line where each school's parent review graph goes (after the review bullets). `<school-slug>` is the school name lowercased and hyphenated.
+6. **Images and graphs are handled by the pipeline after you finish. Don't download images, don't run any shell commands and don't draw charts.** Instead:
+   - In blog.md, put `<!-- IMAGE: <school-slug> -->` on its own line where each school's building photo goes (after the 3 intro bullets, before the info table), and `<!-- GRAPH: <school-slug> -->` on its own line where each school's parent review graph goes (after the review bullets). `<school-slug>` is the school name lowercased and hyphenated.
    - Don't add a markdown fallback table for the graph. The graph replaces it.
    - Write `{out_dir}/assets.json`:
-     `{{"schools": [{{"name": "<school name>", "slug": "<school-slug>", "reviews": {{"<Category>": [<positive %>, <negative %>], "...": [0, 0]}}}}]}}`
+     `{{"schools": [{{"name": "<school name>", "slug": "<school-slug>", "image_url": "<the fact sheet's IMAGE_URL, or null>", "reviews": {{"<Category>": [<positive %>, <negative %>], "...": [0, 0]}}}}]}}`
+     Every school needs an `image_url`, and it is already researched: copy `IMAGE_URL`
+     from that school's fact sheet. Don't go looking for a photo yourself and don't
+     spend a search on one. Use `null` only when the sheet says `NONE` or `BLOCKED`;
+     the pipeline then records the gap in notes.md for a human to fill by hand.
      Never name a third-party site in the blog. The fact sheets cite Ezyschooling, Edustoke,
      Careers360, EducationWorld, Justdial and the rest because that is how a figure gets
      checked — but the post is Yellow Slate's own, and sending readers the name of a rival
@@ -166,6 +170,6 @@ Use the yellow-slate-seo-writer skill to write one blog. This is a batch run wit
      copied verbatim, as step 4 says. A run that writes blog.md and no sheets is an incomplete
      run even if the blog is perfect.
 8. **Only read files in the skill folder and in `{out_dir}`.** Don't open, list or search other folders under `output/` or `data/`: they hold other blogs and old runs, and copying from them mixes up schools.
-9. Run the skill's quality checklist yourself before finishing (graphs excepted, the pipeline adds them).
+9. Run the skill's quality checklist yourself before finishing (images and graphs excepted, the pipeline adds them).
 
 When done, reply with one line: DONE or FAILED: <reason>.

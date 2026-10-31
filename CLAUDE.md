@@ -29,9 +29,18 @@
   itself, its board (CBSE, ICSE, CISCE) and government registries are not third parties and
   may be named. This applies to the blog only: fact sheets in `data/research/` must keep every
   source URL, because that is the verification trail and the writer needs it to judge a figure.
-- The pipeline never looks for or adds school images. The user adds them by hand after the
-  blog is written. Researchers must not spend a search, a fetch or a fact-sheet line on a
-  photo, the writer leaves no image slot, and a blog with no photo is not a QC finding.
-  `stages/draft.py` still uploads any image found in `output/<slug>/images/`, which is the
-  manual path.
+- Every school in a blog gets a photo of its building, and the pipeline goes looking for
+  it. The researcher works a ladder and records `IMAGE_URL`: a page it has already fetched
+  (`og:image`, hero, About Us), the site's gallery and campus-tour pages, the school's
+  Yellow Slate profile, the school's own social media, then at most one search. A browser
+  top-up pass picks up every `BLOCKED` or missing one and *looks* at the candidate before
+  accepting it. The photo must show the building or campus -- never a ceremony, class group,
+  crest or logo; another branch of the same school is an acceptable substitute. Only the
+  school's own channels: never a stock photo, a school directory, an aggregator or Google
+  Maps, because Yellow Slate re-hosts the file and inherits the copyright problem. The whole
+  hunt for one run is capped at 3,000,000 tokens (`IMAGE_BUDGET` in `stages/topup.py`, spent
+  as ~48 browser schools); past that the run drops the image group and says what it left
+  out. A school with no photo anywhere is a notes.md line and a QC warning, not a failed
+  blog -- the user fills those in by hand, and `stages/draft.py` uploads whatever sits in
+  `output/<slug>/images/` either way.
 <!-- end claude-reflect -->
